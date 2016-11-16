@@ -116,18 +116,18 @@ class VariableNodeGraph:
 
 		This would generate the following trees:
 
-			$id_nilai       $strl      $cook     $varx
-			   	|               \       /           |
-			   	|                \     /	        |
-			   	|                 \   /             |
-			  str1                str2           END_NODE
-			   	|                   |
-			   	|                   |
-			 $q_nilai            $xcont
-			   /   \                |
-			  /     \               |
-			 /       \           END_NODE
-		 END_NODE   END_NODE
+                           $id_nilai         $strl      $cook     $varx
+                              |                 \       /           |
+                              |                  \     /            |
+                              |                   \   /             |
+                             str1                 str2           END_NODE
+                              |                     |
+                              |                     |
+                            $q_nilai              $xcont
+                             /   \                  |
+                            /     \                 |
+                           /       \             END_NODE
+                      END_NODE   END_NODE
 
 		The list self.flow_list will always be the top nodes in the tree in this case in the end would contain all the end nodes
 
