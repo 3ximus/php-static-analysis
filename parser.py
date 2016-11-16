@@ -107,14 +107,21 @@ class PHPParser:
 			if line[-1] != ';': # multiline cases
 				continue
 			else: line = line[:-1]
+			self.loaded_snippet.append(line)
+
+			# XXX Output
+			print "%sParsing Line: %s%s" % (COLOR.BLUE, COLOR.NO_COLOR,line)
 
 			# parse line
 			if self.COMMENT.search(line):
+				line = ""
 				continue # ignore comments
 
 			match = self.VAR_ASSIGNMENT.search(line)
 			if match:
 				self.processVarAssignment(match, lineno)
+				line = ""
+				continue
 
 			# TODO process single entry points
 			# TODO process single end nodes
@@ -126,8 +133,6 @@ class PHPParser:
 
 			# ignore everything else
 
-			self.loaded_snippet.append(line)
-			line = ""
 
 # -------- PARSE METHODS --------
 
@@ -142,9 +147,11 @@ class PHPParser:
 				An EndNode ( sanitization function or sensitive sink),
 				A String,
 		'''
+		# XXX Output
+		print "%s\tVarAssign: %s%s" % (COLOR.CYAN, COLOR.NO_COLOR,match.group(1))
 		var_node = VarNode(match.group(1), lineno) # matched var on the left value
 		matchName, matchType = self.current_pattern.applyPattern(match.group(2)) # apply pattern to the right value
-		if matchName and matchType:
+		if matchName:
 			if matchType == Pattern.ENTRY_POINT:
 				self.flowGraph.addNode(var_node)
 			else:
@@ -157,6 +164,8 @@ class PHPParser:
 
 	def processEndNone(self, match, matchName, matchType, lineno):
 		'''Process end nodes, adds itself to the graph'''
+		# XXX Output
+		print "%s\tEndNode: %s%s" % (COLOR.CYAN, COLOR.NO_COLOR,matchName)
 		func_match = self.PHP_FUNC_CALL.search(match) # not really needed but
 		if not func_match:
 			print "Failed to match a function call on end node. Meaning an unexpected sanitization or sensitive pattern was given."
@@ -170,6 +179,8 @@ class PHPParser:
 			self.flowGraph.addNode(EndNode(matchName, lineno, poisoned=True), *parent_nodes)
 
 	def processString(self, match, lineno):
+		# XXX Output
+		print "%s\tString: %s%s" % (COLOR.CYAN, COLOR.NO_COLOR,match)
 		args = self.PHP_VARIABLE.findall(match) # get all variables in the arguments
 		parent_nodes = self.findVarNodes(*args)
 		if parent_nodes != []:
@@ -247,7 +258,7 @@ class VariableFlowGraph:
 
 	def addNode(self, node, *parentNodes):
 		'''Adds node to the graph, its impossible to add a non VarNode without a parentNode'''
-		if not parentNode and isinstance(node, VarNode):
+		if not parentNodes and isinstance(node, VarNode):
 			self.top_list.append(node)
 		elif parentNodes:
 			for pNode in parentNodes:
@@ -291,7 +302,7 @@ class VariableFlowGraph:
 	def _internalFindVarNodes(self, nodes, found_nodes, *names):
 		'''Recursive search for all variable nodes with name in the given names'''
 		for node in nodes:
-			if isinstance(VarNode, node) and node.name in names:
+			if isinstance(node, VarNode) and node.name in names:
 				if node not in found_nodes:
 					found_nodes.append(node)
 			if node.prev:
@@ -332,4 +343,4 @@ class COLOR:
 	BLUE = "\033[34m"
 	PURPLE = "\033[35m"
 	CYAN = "\033[36m"
-	NO_COLOUR = "\033[0m"
+	NO_COLOR = "\033[0m"

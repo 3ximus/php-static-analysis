@@ -26,4 +26,5 @@ if __name__ == '__main__':
 		sys.exit(-1)
 
 	parser = PHPParser(slice_file_path, p)
+	print parser.flowGraph.top_list
 	print parser.flowGraph
