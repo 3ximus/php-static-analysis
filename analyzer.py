@@ -25,8 +25,5 @@ if __name__ == '__main__':
 		print "Slice file path given (\"" + slice_file_path + "\") does not exist."
 		sys.exit(-1)
 
-	slice_file = open(slice_file_path, "r")
-	slice_lines = slice_file.readlines()
-
-	for pattern in p.patterns:
-		pass # TODO: do something to check if the slice_lines are vulnerable
+	parser = PHPParser(slice_file_path, p)
+	print parser.flowGraph
