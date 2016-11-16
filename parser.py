@@ -15,11 +15,17 @@ class Pattern:
 		list sensitive_sinks,
 	'''
 
+	ENTRY_POINT, SANITIZATION_FUNCTION, SENSITIVE_SINK = range(3)
+
 	def __init__(self, vuln_name):
 		self.vuln_name = vuln_name # string
 		self.entry_points = [] # list of strings
 		self.sanitization_functions = [] # list of strings
 		self.sensitive_sinks = [] # list of strings
+		self.matchType=None
+
+	def getType(self): return self.matchType
+	def setMatchType(self, value): self.matchType=value
 
 	def __repr__(self):
 		return "Pattern: \"%s\"\nEntryPoints: %s\nSanitization functions: %s\nSensitive sinks: %s" % (self.vuln_name, self.entry_points, self.sanitization_functions, self.sensitive_sinks)
@@ -28,6 +34,17 @@ class Pattern:
 		'''Add pattern entry (either a string or a list of strings) to a given type'''
 		if isinstance(entry, list): mylist.extend(entry)
 		else: mylist.append(entry)
+
+	def applyPattern(self, string):
+		'''Applies pattern to a string and returns its match name and match type'''
+		for ep in self.entry_points:
+			if ep in string: return ep, self.ENTRY_POINT
+		for sf in self.sanitization_functions:
+			if sf in string: return sf, self.SANITIZATION_FUNCTION
+		for ss in self.sensitive_sinks:
+			if ss in string: return ss, self.SENSITIVE_SINK
+		return None, None
+
 
 class PatternCollection:
 	def __init__(self, path):
@@ -58,44 +75,117 @@ class PHPParser:
 	'''Parse PHP into a sort of tree marking unsafe variables that come from user input'''
 
 	# PHP stuff
-	COMMENT = re.compile(r'/\*(.|\n)*?\*/ | //([^?%\n]|[?%](?!>))*\n? | \#([^?%\n]|[?%](?!>))*\n?')
+	COMMENT = re.compile(r'/\*(.|\n)*?\*/ | //([^?%\n]|[?%](?!>))*\n? | \#([^?%\n]|[?%](?!>))*\n?') # untested
 	PHP_OPENTAG = re.compile(r'<[?%]((php[ \t\r\n]?)|=)?')
-	PHP_CLOSETAG = re.compile(r'[?%]>\r?\n?')
-	INLINE_HTML = re.compile(r'([^<]|<(?![?%]))+')
-	PHP_STRING = re.compile(r'[A-Za-z_][\w_]*')
+	PHP_CLOSETAG = re.compile(r'[?%]>\r?\n?') # untested
+	OPEN_HTML_TAG = re.compile(r'<(?![?%])')
+	PHP_STRING = re.compile(r'\".*\"')
 	PHP_VARIABLE = re.compile(r'\$[A-Za-z_][\w_]*')
-	PHP_QUOTED_VARIABLE = re.compile(r'\$[A-Za-z_][\w_]*')
+	VAR_ASSIGNMENT = re.compile(r'(\$[A-Za-z_][\w_]*)\s*=(?!=)\s*(.*)') # stores the variable in group1 and the right value in group2
+	PHP_FUNC_CALL = re.compile(r'[A-Za-z_][\w_]*\((.*)\)') # arguments will be in group1
 
-	def __init__(self, path):
-		self.nodeGraph = VariableNodeGraph()
+	def __init__(self, path, patternsColllection):
+		self.flowGraph = VariableFlowGraph()
 		self.loaded_snippet = [] # contains the full snippet
+		self.pattern_collection = patternsColllection # instance of a PatterCollection class
+		self.current_pattern = None
 
 		if not os.path.exists(path):
 			print "Unexistent php file \"%s\"" % path
 			sys.exit(-1)
 		with open(path, 'r') as fp:
-			self.parsePHPFile(fp) # builds node graph
+			for pattern in self.pattern_collection:
+				self.current_pattern = pattern
+				self.parsePHPFile(fp) # builds node graph
+
+# -------- FILE PARSE METHOD --------
 
 	def parsePHPFile(self, fp):
+		'''Reades file creating nodes and adding them to the flowGraph'''
 		re.compile
 		line = ""
 		for lineno, templine in enumerate(fp):
-			if line.strip(' \n')[-1] != ';':
-				line.join(templine) # multiline cases
+			# concatenate and strip unwanted chars
+			line = line.join(" "+templine).strip(' \t\r\n')
+			if line[-1] != ';': # multiline cases
 				continue
-			else: line = templine
+			else: line = line[:-1]
 
 			# parse line
-			if self.COMMENT.search(line): continue # ignore comments
-			elif self.PHP_VARIABLE.search(line): pass # TODO
+			if self.COMMENT.search(line):
+				continue # ignore comments
+
+			match = self.VAR_ASSIGNMENT.search(line)
+			if match:
+				self.processVarAssignment(match, lineno)
+
+			# process only entry points
+
+			# process only end nodes
+
+			# what else can it be, only end nodes??
+
+			# ignore everything else
+			match = self.PHP_VARIABLE.search(line)
+			if match: print "UNHANDLED VAR" + match(0)
 
 
 			self.loaded_snippet.append(line)
 			line = ""
 
+# -------- PARSE METHODS --------
+
+	def processVarAssignment(self, match, lineno):
+		'''Process assignment of a variable in PHP
+			The right value of an assignment can be:
+				An Entry Point
+				An EndNode ( sanitization function or sensitive sink)
+				A String
+		'''
+		var_node = VarNode(match.group(1), lineno) # matched var on the left value
+		matchName, matchType = self.current_pattern.applyPattern(match.group(2)) # apply pattern to the right value
+		if matchName and matchType:
+			if matchType == Pattern.ENTRY_POINT:
+				self.flowGraph.addNode(var_node)
+			else:
+				self.processEndNone(match.group(2), matchName, matchType, lineno)
+		else : # patterns didnt match, try string assignment
+			new_match = self.PHP_STRING.search(line)
+			if new_match:
+				self.processString(match.group(2), lineno)
+
+		print COLOR.BLUE + match.group(0) + COLOR.NO_COLOUR
+		print COLOR.RED + match.group(1) + COLOR.NO_COLOUR
+		print COLOR.GREEN + match.group(2) + COLOR.NO_COLOUR
+
+	def processEndNone(self, match, matchName, matchType, lineno):
+		func_match = self.PHP_FUNC_CALL.search(match)
+		if not func_match: print "Failed to match a function call on end node. Meaning an unexpected sanitization or sensitive pattern was given."
+		args = self.PHP_VARIABLE.findall(func_match.group(1)) # get all variables in the arguments
+		parent_nodes = self.findVarNodes(*args)
+
+		if matchType == Pattern.SANITIZATION_FUNCTION:
+			self.flowGraph.addNode(EndNode(matchName, lineno, poisoned=False)) # incomplete needs parent nodes
+		elif matchType == Pattern.SENSITIVE_SINK:
+			self.flowGraph.addNode(EndNode(matchName, lineno, poisoned=True)) # incomplete needs parent nodes
+
+# -------- OTHER METHODS --------
+
+	def findVarNode(self, name):
+		'''Finds an already defined varNode by its name'''
+		self.flowGraph.find
+
+	def anotateLine(self, lineno, anotation):
+		'''Inserts an anotation on a certain snippet line'''
+		self.loaded_snippet[lineno].join(" "+anotation)
+
+
+# ----------------------------------------
+
+
 # -------- PARSER GRAPH --------
 
-class VariableNodeGraph:
+class VariableFlowGraph:
 	'''This class contains a variable content propagation graph
 
 		This class will behave as demonstrated in the following php file example:
@@ -132,14 +222,15 @@ class VariableNodeGraph:
 		The list self.flow_list will always be the top nodes in the tree in this case in the end would contain all the end nodes
 
 		A variable is only added to the node if its assigned from an entry point.
-		And END_NODE is either a Sanitization function or a Sensitive Sink if its the latter the variable is marked as poisoned, if its the former no more can be added after it (the variable wont be poisoned)
+		And END_NODE is either a Sanitization function or a Sensitive Sink if its the latter the variable is marked as poisoned,
+			in either case of END_NODES, no more nodes can be added to them (NOTE: even if there are huge chains it wont matter since the bug was already found)
 	'''
 	def __init__(self):
 		self.flow_list = []
 
 	def addNode(self, node, *parentNodes):
 		'''Adds node to the graph, its impossible to add a non VarNode without a parentNode'''
-		if not parentNode and isinstance(node, VarNode): # cannot insert new node if
+		if not parentNode and isinstance(node, VarNode):
 			self.flow_list.append(node)
 		elif parentNodes:
 			for pNode in parentNodes:
@@ -157,7 +248,7 @@ class VariableNodeGraph:
 					self.propagatePoison(node)
 
 	def tryDelete(self, node):
-		if isinstance(node, EndNode) and not node.poisoned:
+		if isinstance(node, EndNode):
 			return False
 		else:
 			self.flow_list.remove(node)
@@ -172,7 +263,7 @@ class VariableNodeGraph:
 
 # -------- PARSER NODES --------
 
-class Node:
+class Node(object):
 	def __init__(self):
  		# tuple of previous and next nodes
 		self.next = []
@@ -200,4 +291,11 @@ class EndNode(Node):
 		self.lineno = lineno
 		self.poisoned = poisoned
 
-
+class COLOR:
+	RED = "\033[31m"
+	GREEN = "\033[32m"
+	YELLOW = "\033[33m"
+	BLUE = "\033[34m"
+	PURPLE = "\033[35m"
+	CYAN = "\033[36m"
+	NO_COLOUR = "\033[0m"
