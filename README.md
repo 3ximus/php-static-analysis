@@ -4,12 +4,12 @@ Parse PHP snippets to find possible vulnerabilities
 
 ## Usage:
 
-`./analyzer <file.txt>`
+`analyzer.py <filePath> [-p <pattern-file> -n <pattern-number>] [-v]`
 
 
 ## Description:
 
-The parser reads a patterns file ([patterns.txt](https://github.com/3ximus/php-static-analysis/blob/master/patterns.txt)) that has the following information:
+The parser reads a patterns file provider or the default ([patterns.txt](https://github.com/3ximus/php-static-analysis/blob/master/patterns.txt)), if available, that has the following information:
 
 ```
 Pattern: "SQL injection"
