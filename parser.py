@@ -161,7 +161,8 @@ class PHPParser:
 		matchName, matchType = self.current_pattern.applyPattern(match.group(2)) # apply pattern to the right value
 		if matchName:
 			if matchType == Pattern.ENTRY_POINT:
-				print "%s\t  -> EntryPoint: %s%s" % (COLOR.CYAN, COLOR.NO_COLOR,matchName)
+				print "%s\t  -> EntryPoint: %s%s" % (COLOR.YELLOW, COLOR.NO_COLOR,matchName)
+				var_node.entryPoint = True
 				self.flowGraph.addNode(var_node)
 			else:
 				self.processEndNone(match.group(2), matchName, matchType, lineno)
@@ -182,19 +183,20 @@ class PHPParser:
 	def processEndNone(self, match, matchName, matchType, lineno):
 		'''Process end nodes, adds itself to the graph'''
 		# XXX Output
-		print "%s\tEndNode: %s%s" % (COLOR.CYAN, COLOR.NO_COLOR,matchName)
 		func_match = self.PHP_FUNC_CALL.search(match) # not really needed but
 		if not func_match:
 			print "Failed to match a function call on end node. Meaning an unexpected sanitization or sensitive pattern was given."
 			return
 		args = self.PHP_VARIABLE.findall(func_match.group(1)) # get all variables in the arguments
 		parent_nodes = self.findVarNodes(*args)
-		print "%s\t  -> Args: %s%s" % (COLOR.CYAN, COLOR.NO_COLOR,", ".join(args))
 
 		if parent_nodes != [] and matchType == Pattern.SANITIZATION_FUNCTION:
+			print "%s\tEndNode: %s%s" % (COLOR.GREEN, COLOR.NO_COLOR,matchName)
 			self.flowGraph.addNode(EndNode(matchName, lineno, poisoned=False), *parent_nodes)
 		elif parent_nodes != [] and matchType == Pattern.SENSITIVE_SINK:
+			print "%s\tEndNode: %s%s" % (COLOR.RED, COLOR.NO_COLOR,matchName)
 			self.flowGraph.addNode(EndNode(matchName, lineno, poisoned=True), *parent_nodes)
+		print "%s\t  -> Args: %s%s" % (COLOR.CYAN, COLOR.NO_COLOR,", ".join(args))
 
 
 # TODO FIXME this is likely useless, maybe we should just link a variable
@@ -276,7 +278,8 @@ class VariableFlowGraph:
 # -------- OUTPUT METHODS --------
 
 	def __repr__(self):
-		out = ""
+		out = "Legend: %sVariable from Entry Points %sPoisoned Variable%s\n\t%sSanitization Functions %sSensitive Sinks%s\n" % \
+				(COLOR.YELLOW, COLOR.CYAN_BACK+COLOR.YELLOW, COLOR.NO_COLOR, COLOR.GREEN, COLOR.RED, COLOR.NO_COLOR)
 		out += self._internal__repr__(self.top_list, 0, [])
 		return out
 
@@ -285,9 +288,14 @@ class VariableFlowGraph:
 		if len(nodes)!=1: span.append(traceCount)
 		for i, node in enumerate(nodes):
 			if len(nodes) == i+1 and traceCount in span: span.remove(traceCount)
-			tempOut += "\n%s%s%s%s" % (''.join(map(lambda x: u'\u2502     ' if x in span else u'      ', range(traceCount))),
+			tempOut += "\n%s%s%s%s%s%s%s" % (''.join(map(lambda x: u'\u2502     ' if x in span else u'      ', range(traceCount))),
 									u'\u2514\u2500\u2500 ' if len(nodes)==i+1 else u'\u251c\u2500\u2500 ',
+									COLOR.CYAN_BACK if isinstance(node, VarNode) and node.entryPoint and node.poisoned else '',
+									COLOR.RED if isinstance(node, EndNode) and node.poisoned else \
+										(COLOR.GREEN if isinstance(node, EndNode) and not node.poisoned else \
+											(COLOR.YELLOW if isinstance(node, VarNode) and node.entryPoint else '')),
 									node.name,
+									COLOR.NO_COLOR,
 									self._internal__repr__(node.prev, traceCount+1, span) if node.prev != [] else "")
 		return tempOut
 
@@ -329,7 +337,7 @@ class VariableFlowGraph:
 
 	def propagatePoison(self, node):
 		for n in node.prev:
-			if isinstance(node, VarNode):
+			if isinstance(n, VarNode):
 				n.poisoned = True
 			self.propagatePoison(n)
 
@@ -366,9 +374,10 @@ class StringNode(Node):
 		super(StringNode, self).__init__(name, lineno)
 
 class VarNode(Node):
-	def __init__(self, name, lineno):
+	def __init__(self, name, lineno, entryPoint=False):
 		super(VarNode, self).__init__(name, lineno)
 		self.poisoned = False # if its content carries over to a Sensitive Sink
+		self.entryPoint = entryPoint
 
 	def setPoisoned(self, value=True):
 		self.poisoned = value
@@ -384,6 +393,7 @@ class COLOR:
 	RED = "\033[31m"
 	GREEN = "\033[32m"
 	YELLOW = "\033[33m"
+	CYAN_BACK = "\033[46m"
 	BLUE = "\033[34m"
 	PURPLE = "\033[35m"
 	CYAN = "\033[36m"
