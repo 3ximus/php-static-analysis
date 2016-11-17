@@ -1,8 +1,8 @@
 #!/usr/bin/python2
 
 import sys, os
-from parser import PatternCollection, PHPParser
-
+import optparse
+import PHPParser
 
 PATTERNS_PATH = "patterns.txt"
 
@@ -10,26 +10,34 @@ PATTERNS_PATH = "patterns.txt"
 
 # Check received arguments
 if __name__ == '__main__':
-	if len(sys.argv) != 2:
-		print "Usage: ./analyzer.py <filePath>"
-		sys.exit(-1)
+	op = optparse.OptionParser("Usage: ./analyzer.py <filePath> [-p]")
+	op.add_option('-p', '--pattern-file', default=PATTERNS_PATH, action='store', dest='pattern_file', help='select patterns file to read patterns from, default is \'%default\'')
+	op.add_option('-n', '--pattern-number', default='0', action='store', type='int', dest='pattern_number', help='select pattern to use by number of read patterns, default is %default')
+	op.add_option('-v', '--verbose', action='store_true', dest='verbose', help='show parsing output')
+	(options, args) = op.parse_args()
 
-	pCollection = PatternCollection(PATTERNS_PATH)
+	if len(args) < 1:
+		op.error("incorrect number of arguments")
+	if options.verbose:
+		PHPParser.VERBOSE = True
+
+	pCollection = PHPParser.PatternCollection(options.pattern_file)
 	print "Loaded patterns:\n"
 	for pattern in pCollection.patterns:
 		print "%s\n" % pattern
 
 	# Read slice file
-	slice_file_path = sys.argv[1]
-	if os.path.exists(slice_file_path) == False:
-		print "Slice file path given (\"" + slice_file_path + "\") does not exist."
-		sys.exit(-1)
+	files_to_parse = args
+	for f in files_to_parse:
+		if os.path.exists(f) == False:
+			print "\nSlice file path given (\"%s\") does not exist.\n" % f
+			continue
 
-	print "Parsing File:\n"
-	parser = PHPParser(slice_file_path, pCollection.patterns[0]) # XXX hardcoded to the first pattern
+		print "\nParsing File: %s\n" % f
+		parser = PHPParser.PHPParser(f, pCollection.patterns[options.pattern_number])
 
-	print "\nParse Tree:\n"
-	print parser.flowGraph
+		print "\nParse Tree:\n"
+		print parser.flowGraph
 
-	print "\nProcessed File:\n"
-	print parser.getProcessedFile(inLineAnnotations=True)
+		print "\nProcessed File:\n"
+		print parser.getProcessedFile(inLineAnnotations=True)
