@@ -109,13 +109,15 @@ class PHPParser:
 		'''Reades file creating nodes and adding them to the flowGraph'''
 		re.compile
 		line = ""
-		for lineno, templine in enumerate(fp):
+		lineno=-1
+		for original_lineno, templine in enumerate(fp):
 			# concatenate and strip unwanted chars
 			line = (line + " " + templine).strip(' \t\r\n')
 			if line == "" or line[-1] != ';': # multiline cases
 				continue
 			else: line = line[:-1]
 			self.loaded_snippet.append(line)
+			lineno+=1
 
 			# XXX Output
 			print "%sParsing Line: %s%s" % (COLOR.BLUE, COLOR.NO_COLOR,line)
@@ -161,6 +163,7 @@ class PHPParser:
 		matchName, matchType = self.current_pattern.applyPattern(match.group(2)) # apply pattern to the right value
 		if matchName:
 			if matchType == Pattern.ENTRY_POINT:
+				# XXX Output
 				print "%s\t  -> EntryPoint: %s%s" % (COLOR.YELLOW, COLOR.NO_COLOR,matchName)
 				var_node.entryPoint = True
 				self.flowGraph.addNode(var_node)
@@ -176,26 +179,30 @@ class PHPParser:
 				var_match = self.PHP_VARIABLE.search(match.group(2))
 				node_var = self.findVarNodes(var_match.group(0))
 				if node_var != []:
+					# XXX Output
 					print "\t  -> %sVarToVar%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,match.group(2))
 					self.flowGraph.addNode(var_node, node_var[0]) #node_var is list of found nodes (it can only be 1 because there is only one var)
 		# TODO add any other option here?
 
 	def processEndNone(self, match, matchName, matchType, lineno):
 		'''Process end nodes, adds itself to the graph'''
-		# XXX Output
 		func_match = self.PHP_FUNC_CALL.search(match) # not really needed but
 		if not func_match:
+			# XXX Output
 			print "Failed to match a function call on end node. Meaning an unexpected sanitization or sensitive pattern was given."
 			return
 		args = self.PHP_VARIABLE.findall(func_match.group(1)) # get all variables in the arguments
 		parent_nodes = self.findVarNodes(*args)
 
 		if parent_nodes != [] and matchType == Pattern.SANITIZATION_FUNCTION:
+			# XXX Output
 			print "%s\tEndNode: %s%s" % (COLOR.GREEN, COLOR.NO_COLOR,matchName)
 			self.flowGraph.addNode(EndNode(matchName, lineno, poisoned=False), *parent_nodes)
 		elif parent_nodes != [] and matchType == Pattern.SENSITIVE_SINK:
+			# XXX Output
 			print "%s\tEndNode: %s%s" % (COLOR.RED, COLOR.NO_COLOR,matchName)
 			self.flowGraph.addNode(EndNode(matchName, lineno, poisoned=True), *parent_nodes)
+		# XXX Output
 		print "\t  -> %sArgs%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,", ".join(args))
 
 
@@ -208,6 +215,7 @@ class PHPParser:
 		# XXX Output
 		print "\t%sString%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,match)
 		args = self.PHP_VARIABLE.findall(match) # get all variables in the arguments
+		# XXX Output
 		print "\t  -> %sUsedVars%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,", ".join(args))
 		parent_nodes = self.findVarNodes(*args)
 		if parent_nodes != []:
@@ -221,12 +229,28 @@ class PHPParser:
 		'''Finds already defined varNodes by their names'''
 		return self.flowGraph.findVarNodes(*names)
 
-	def anotateLine(self, lineno, anotation):
+	def anotateLine(self, lineno, anotation, markInlineType=False):
 		'''Inserts an anotation on a certain snippet line'''
+		if markInlineType:
+			if markInlineType == Pattern.ENTRY_POINT:
+				pass
+			if markInlineType == Pattern.SANITIZATION_FUNCTION:
+				pass
+			if markInlineType == Pattern.SENSITIVE_SINK:
+				pass
 		self.loaded_snippet[lineno] += " " + anotation
 
 # TODO in the future select from wich pattern would  you like the file processed
 	def getProcessedFile(self):
+# FIXME this is can only be called once... make a backup of the lines and revert after processing or something
+		for node in self.flowGraph.walkOverMe(self.flowGraph.top_list):
+			if isinstance(node, VarNode) and node.entryPoint:
+				self.anotateLine(node.lineno, COLOR.YELLOW+"<- Entry Point"+COLOR.NO_COLOR)
+			elif isinstance(node, EndNode) and node.poisoned:
+				self.anotateLine(node.lineno, COLOR.RED+"<- Sensitive Sink"+COLOR.NO_COLOR)
+			elif isinstance(node, EndNode) and not node.poisoned:
+				self.anotateLine(node.lineno, COLOR.GREEN+"<- Sanitization Function"+COLOR.NO_COLOR)
+
 		return "\n".join(self.loaded_snippet)
 
 
@@ -341,12 +365,20 @@ class VariableFlowGraph:
 			return True
 
 	def propagatePoison(self, node):
+		'''Receives a node that originates the poison and spreads it contaminating all reachable VarNodes, <<<< this description xD'''
 		for n in node.prev:
 			if isinstance(n, VarNode):
 				n.poisoned = True
 			self.propagatePoison(n)
 
-	def findVarNodes(self, *names):
+	def walkOverMe(self, nodes):
+		'''Iterate over this method to retrieved all the nodes in the tree one by one'''
+		for n in nodes:
+			yield n
+			for x in self.walkOverMe(n.prev):
+				yield x
+
+	def findVarNodes(self, *names): # TODO use the walk over me instead of the recursive self._internalFindVarNodes
 		'''Finds all nodes with given names
 			NOTE that this function allows names not found in the nodes, so it will ignore undeclared variables
 		'''

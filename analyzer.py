@@ -29,5 +29,5 @@ if __name__ == '__main__':
 	parser = PHPParser(slice_file_path, p)
 	print "\nParse Tree:\n"
 	print parser.flowGraph
-	print "\nCorrected File:\n"
+	print "\nProcessed File:\n"
 	print parser.getProcessedFile()
