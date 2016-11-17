@@ -168,7 +168,9 @@ class PHPParser:
 # -------- PARSE METHODS --------
 
 	def processPattern(self, line, lineno, varNode=None):
-		'''Process line with class pattern. Returns whether or not it matched sucessfully'''
+		'''Process line with class pattern. Returns whether or not it matched sucessfully.
+			The varNode given is only added to the tree if case the right value is an entry point
+		'''
 		matchName, matchType = self.pattern.applyPattern(line) # apply pattern to the right value
 		if matchName:
 			if matchType == Pattern.ENTRY_POINT:

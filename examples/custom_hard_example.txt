@@ -21,6 +21,6 @@ $hum=mysql_real_escape_string($kitty);
 
 $ffff = "MY SUPER QUERY '$kitty'";
 
-$zzz=mysql_query($ffff,$hum);
+$zzz=mysql_query($hum);
 
 $xxx=mysql_query($ffff,$hum, $id);
