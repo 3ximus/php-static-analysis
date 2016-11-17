@@ -14,7 +14,7 @@ Sensitive sinks: ['mysql_query', 'mysql_unbuffered_query', 'mysql_db_query']
 
 When parsing the following file:
 
-```
+```php
 $id_nilai=$_GET['idn'];
 $strl=$_POST['sis'];
 $cook=$_COOKIE['ll'];

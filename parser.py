@@ -156,7 +156,7 @@ class PHPParser:
 				A String,
 		'''
 		# XXX Output
-		print "%s\tVarAssigned: %s%s" % (COLOR.CYAN, COLOR.NO_COLOR,match.group(1))
+		print "%s\tVarAssigned%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,match.group(1))
 		var_node = VarNode(match.group(1), lineno) # matched var on the left value
 		matchName, matchType = self.current_pattern.applyPattern(match.group(2)) # apply pattern to the right value
 		if matchName:
@@ -176,7 +176,7 @@ class PHPParser:
 				var_match = self.PHP_VARIABLE.search(match.group(2))
 				node_var = self.findVarNodes(var_match.group(0))
 				if node_var != []:
-					print "%s\t  -> VarToVar: %s%s" % (COLOR.CYAN, COLOR.NO_COLOR,match.group(2))
+					print "\t  -> %sVarToVar%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,match.group(2))
 					self.flowGraph.addNode(var_node, node_var[0]) #node_var is list of found nodes (it can only be 1 because there is only one var)
 		# TODO add any other option here?
 
@@ -196,7 +196,7 @@ class PHPParser:
 		elif parent_nodes != [] and matchType == Pattern.SENSITIVE_SINK:
 			print "%s\tEndNode: %s%s" % (COLOR.RED, COLOR.NO_COLOR,matchName)
 			self.flowGraph.addNode(EndNode(matchName, lineno, poisoned=True), *parent_nodes)
-		print "%s\t  -> Args: %s%s" % (COLOR.CYAN, COLOR.NO_COLOR,", ".join(args))
+		print "\t  -> %sArgs%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,", ".join(args))
 
 
 # TODO FIXME this is likely useless, maybe we should just link a variable
@@ -206,9 +206,9 @@ class PHPParser:
 			variables used and returns the node created, otherwise it wont do and return nothing
 		'''
 		# XXX Output
-		print "%s\tString: %s%s" % (COLOR.CYAN, COLOR.NO_COLOR,match)
+		print "\t%sString%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,match)
 		args = self.PHP_VARIABLE.findall(match) # get all variables in the arguments
-		print "%s\t  -> UsedVars: %s%s" % (COLOR.CYAN, COLOR.NO_COLOR,", ".join(args))
+		print "\t  -> %sUsedVars%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,", ".join(args))
 		parent_nodes = self.findVarNodes(*args)
 		if parent_nodes != []:
 			strNode = StringNode(match, lineno)
@@ -224,6 +224,11 @@ class PHPParser:
 	def anotateLine(self, lineno, anotation):
 		'''Inserts an anotation on a certain snippet line'''
 		self.loaded_snippet[lineno] += " " + anotation
+
+# TODO in the future select from wich pattern would  you like the file processed
+	def getProcessedFile(self):
+		return "\n".join(self.loaded_snippet)
+
 
 # ----------------------------------------
 
@@ -279,7 +284,7 @@ class VariableFlowGraph:
 
 	def __repr__(self):
 		out = "Legend: %sVariable from Entry Points %sPoisoned Variable%s\n\t%sSanitization Functions %sSensitive Sinks%s\n" % \
-				(COLOR.YELLOW, COLOR.CYAN_BACK+COLOR.YELLOW, COLOR.NO_COLOR, COLOR.GREEN, COLOR.RED, COLOR.NO_COLOR)
+				(COLOR.YELLOW, COLOR.UNDERLINE_BACK+COLOR.YELLOW, COLOR.NO_COLOR, COLOR.GREEN, COLOR.RED, COLOR.NO_COLOR)
 		out += self._internal__repr__(self.top_list, 0, [])
 		return out
 
@@ -290,7 +295,7 @@ class VariableFlowGraph:
 			if len(nodes) == i+1 and traceCount in span: span.remove(traceCount)
 			tempOut += "\n%s%s%s%s%s%s%s" % (''.join(map(lambda x: u'\u2502     ' if x in span else u'      ', range(traceCount))),
 									u'\u2514\u2500\u2500 ' if len(nodes)==i+1 else u'\u251c\u2500\u2500 ',
-									COLOR.CYAN_BACK if isinstance(node, VarNode) and node.entryPoint and node.poisoned else '',
+									COLOR.UNDERLINE_BACK if isinstance(node, VarNode) and node.entryPoint and node.poisoned else '',
 									COLOR.RED if isinstance(node, EndNode) and node.poisoned else \
 										(COLOR.GREEN if isinstance(node, EndNode) and not node.poisoned else \
 											(COLOR.YELLOW if isinstance(node, VarNode) and node.entryPoint else '')),
@@ -393,8 +398,9 @@ class COLOR:
 	RED = "\033[31m"
 	GREEN = "\033[32m"
 	YELLOW = "\033[33m"
-	CYAN_BACK = "\033[46m"
 	BLUE = "\033[34m"
 	PURPLE = "\033[35m"
 	CYAN = "\033[36m"
+	UNDERLINE_BACK = "\033[4;40m"
+	ITALIC = "\033[3;29m"
 	NO_COLOR = "\033[0m"
