@@ -14,9 +14,9 @@ if __name__ == '__main__':
 		print "Usage: ./analyzer.py <filePath>"
 		sys.exit(-1)
 
-	p = PatternCollection(PATTERNS_PATH)
+	pCollection = PatternCollection(PATTERNS_PATH)
 	print "Loaded patterns:\n"
-	for pattern in p.patterns:
+	for pattern in pCollection.patterns:
 		print "%s\n" % pattern
 
 	# Read slice file
@@ -26,8 +26,10 @@ if __name__ == '__main__':
 		sys.exit(-1)
 
 	print "Parsing File:\n"
-	parser = PHPParser(slice_file_path, p)
+	parser = PHPParser(slice_file_path, pCollection.patterns[0]) # XXX hardcoded to the first pattern
+
 	print "\nParse Tree:\n"
 	print parser.flowGraph
+
 	print "\nProcessed File:\n"
-	print parser.getProcessedFile()
+	print parser.getProcessedFile(inLineAnnotations=True)

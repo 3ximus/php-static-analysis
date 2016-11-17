@@ -46,10 +46,10 @@ class Pattern:
 		'''Applies pattern to a string and returns its match name and match type'''
 		for ep in self.entry_points:
 			if ep in string: return ep, self.ENTRY_POINT
-		for sf in self.sanitization_functions:
-			if sf in string: return sf, self.SANITIZATION_FUNCTION
 		for ss in self.sensitive_sinks:
 			if ss in string: return ss, self.SENSITIVE_SINK
+		for sf in self.sanitization_functions:
+			if sf in string: return sf, self.SANITIZATION_FUNCTION
 		return None, None
 
 
@@ -88,20 +88,16 @@ class PHPParser:
 	VAR_ASSIGNMENT = re.compile(r'(\$[A-Za-z_][\w_]*)\s*=(?!=)\s*(.*)') # stores the variable in group1 and the right value in group2
 	PHP_FUNC_CALL = re.compile(r'[A-Za-z_][\w_]*\((.*)\)') # arguments will be in group1
 
-	def __init__(self, path, patternsColllection):
+	def __init__(self, path, pattern):
 		self.flowGraph = VariableFlowGraph()
 		self.loaded_snippet = [] # contains the full snippet
-		self.pattern_collection = patternsColllection # instance of a PatterCollection class
-		self.current_pattern = None
+		self.pattern = pattern # instance of Pattern
 
 		if not os.path.exists(path):
 			print "Unexistent php file \"%s\"" % path
 			sys.exit(-1)
 		with open(path, 'r') as fp:
-			for pattern in self.pattern_collection.patterns:
-				self.current_pattern = pattern
-				# fp.seek(0) # FIXME if we do this we should create a new graph for this pattern
-				self.parsePHPFile(fp) # builds node graph
+			self.parsePHPFile(fp) # builds node graph
 
 # -------- FILE PARSE METHOD --------
 
@@ -160,7 +156,7 @@ class PHPParser:
 		# XXX Output
 		print "%s\tVarAssigned%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,match.group(1))
 		var_node = VarNode(match.group(1), lineno) # matched var on the left value
-		matchName, matchType = self.current_pattern.applyPattern(match.group(2)) # apply pattern to the right value
+		matchName, matchType = self.pattern.applyPattern(match.group(2)) # apply pattern to the right value
 		if matchName:
 			if matchType == Pattern.ENTRY_POINT:
 				# XXX Output
@@ -229,27 +225,32 @@ class PHPParser:
 		'''Finds already defined varNodes by their names'''
 		return self.flowGraph.findVarNodes(*names)
 
-	def anotateLine(self, lineno, anotation, markInlineType=False):
-		'''Inserts an anotation on a certain snippet line'''
+	def annotateLine(self, lineno, anotation, markInlineType=False):
+		'''Inserts an anotation on a certain snippet line, markInlineType is a boolean used to do inline annotations'''
 		if markInlineType:
-			if markInlineType == Pattern.ENTRY_POINT:
-				pass
-			if markInlineType == Pattern.SANITIZATION_FUNCTION:
-				pass
-			if markInlineType == Pattern.SENSITIVE_SINK:
-				pass
+			# TODO maybe move all this crap to the self.processPattern method, depends on the implementation
+			matchName, matchType = self.pattern.applyPattern(self.loaded_snippet[lineno])
+			if matchType == Pattern.ENTRY_POINT:
+				self.loaded_snippet[lineno] = self.loaded_snippet[lineno].replace(
+					matchName, COLOR.YELLOW + matchName + COLOR.NO_COLOR)
+			if matchType == Pattern.SANITIZATION_FUNCTION:
+				self.loaded_snippet[lineno] = self.loaded_snippet[lineno].replace(
+					matchName, COLOR.GREEN + matchName + COLOR.NO_COLOR)
+			if matchType == Pattern.SENSITIVE_SINK:
+				self.loaded_snippet[lineno] = self.loaded_snippet[lineno].replace(
+					matchName, COLOR.RED + matchName + COLOR.NO_COLOR)
 		self.loaded_snippet[lineno] += " " + anotation
 
-# TODO in the future select from wich pattern would  you like the file processed
-	def getProcessedFile(self):
+	def getProcessedFile(self, inLineAnnotations=False):
+		'''Returns processed file with annotations'''
 # FIXME this is can only be called once... make a backup of the lines and revert after processing or something
 		for node in self.flowGraph.walkOverMe(self.flowGraph.top_list):
 			if isinstance(node, VarNode) and node.entryPoint:
-				self.anotateLine(node.lineno, COLOR.YELLOW+"<- Entry Point"+COLOR.NO_COLOR)
+				self.annotateLine(node.lineno, COLOR.YELLOW+"<- Entry Point"+COLOR.NO_COLOR, inLineAnnotations)
 			elif isinstance(node, EndNode) and node.poisoned:
-				self.anotateLine(node.lineno, COLOR.RED+"<- Sensitive Sink"+COLOR.NO_COLOR)
+				self.annotateLine(node.lineno, COLOR.RED+"<- Sensitive Sink"+COLOR.NO_COLOR, inLineAnnotations)
 			elif isinstance(node, EndNode) and not node.poisoned:
-				self.anotateLine(node.lineno, COLOR.GREEN+"<- Sanitization Function"+COLOR.NO_COLOR)
+				self.annotateLine(node.lineno, COLOR.GREEN+"<- Sanitization Function"+COLOR.NO_COLOR, inLineAnnotations)
 
 		return "\n".join(self.loaded_snippet)
 

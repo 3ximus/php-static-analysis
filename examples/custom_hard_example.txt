@@ -17,7 +17,7 @@ $kitty=$_COOKIE['id'];
 
 $crl=mysql_query($edit,$an, $other);
 
-$hum=mysql_real_escape_string($kitty)
+$hum=mysql_real_escape_string($kitty);
 
 $ffff = "MY SUPER QUERY '$kitty'";
 
