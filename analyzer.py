@@ -15,7 +15,7 @@ if __name__ == '__main__':
 		sys.exit(-1)
 
 	p = PatternCollection(PATTERNS_PATH)
-	print "Loaded patterns:"
+	print "Loaded patterns:\n"
 	for pattern in p.patterns:
 		print "%s\n" % pattern
 
@@ -25,6 +25,8 @@ if __name__ == '__main__':
 		print "Slice file path given (\"" + slice_file_path + "\") does not exist."
 		sys.exit(-1)
 
+	print "Parsing File:\n"
 	parser = PHPParser(slice_file_path, p)
-	print parser.flowGraph.top_list
+	print "\nParse Tree:"
 	print parser.flowGraph
+	print "\nCorrected File:"

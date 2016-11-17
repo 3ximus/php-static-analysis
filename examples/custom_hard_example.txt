@@ -1,0 +1,14 @@
+$someVar=$_POST['cat'];
+$cat=$_POST['cat'];
+$id=$_POST['id'];
+$idx=$_GET['id'];
+$test=$_COOKIE['id'];
+
+$idvv = $idx;
+
+$other="UPDATE cat SET '$test'";
+$blabla = "MY SUPER QUERY '$someVar'";
+$an="UPDATE cat SET '$blabla' AND '$idvv'";
+$edit="UPDATE cat SET cat='$cat' WHERE id_cat='$id'";
+
+$crl=mysql_query($edit,$an, $other);

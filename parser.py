@@ -2,6 +2,8 @@
 
 import sys, os
 import re
+reload(sys)
+sys.setdefaultencoding('utf-8')
 
 
 # -------- PATTERNS --------
@@ -28,7 +30,12 @@ class Pattern:
 	def setMatchType(self, value): self.matchType=value
 
 	def __repr__(self):
-		return "Pattern: \"%s\"\nEntryPoints: %s\nSanitization functions: %s\nSensitive sinks: %s" % (self.vuln_name, self.entry_points, self.sanitization_functions, self.sensitive_sinks)
+		return "%sPattern:%s \"%s\"\n%sEntryPoints:%s %s\n   \
+				\r%sSanitization functions:%s %s\n%sSensitive sinks:%s %s" % \
+				(COLOR.CYAN, COLOR.NO_COLOR, self.vuln_name,
+				COLOR.CYAN,COLOR.NO_COLOR, self.entry_points,
+				COLOR.CYAN,COLOR.NO_COLOR, self.sanitization_functions,
+				COLOR.CYAN,COLOR.NO_COLOR, self.sensitive_sinks)
 
 	def addEntry(self, mylist, entry):
 		'''Add pattern entry (either a string or a list of strings) to a given type'''
@@ -93,6 +100,7 @@ class PHPParser:
 		with open(path, 'r') as fp:
 			for pattern in self.pattern_collection.patterns:
 				self.current_pattern = pattern
+				# fp.seek(0) # FIXME if we do this we should create a new graph for this pattern
 				self.parsePHPFile(fp) # builds node graph
 
 # -------- FILE PARSE METHOD --------
@@ -104,8 +112,7 @@ class PHPParser:
 		for lineno, templine in enumerate(fp):
 			# concatenate and strip unwanted chars
 			line = (line + " " + templine).strip(' \t\r\n')
-			print "Unprocessed %s" % line
-			if line[-1] != ';': # multiline cases
+			if line == "" or line[-1] != ';': # multiline cases
 				continue
 			else: line = line[:-1]
 			self.loaded_snippet.append(line)
@@ -149,18 +156,27 @@ class PHPParser:
 				A String,
 		'''
 		# XXX Output
-		print "%s\tVarAssign: %s%s" % (COLOR.CYAN, COLOR.NO_COLOR,match.group(1))
+		print "%s\tVarAssigned: %s%s" % (COLOR.CYAN, COLOR.NO_COLOR,match.group(1))
 		var_node = VarNode(match.group(1), lineno) # matched var on the left value
 		matchName, matchType = self.current_pattern.applyPattern(match.group(2)) # apply pattern to the right value
 		if matchName:
 			if matchType == Pattern.ENTRY_POINT:
+				print "%s\t  -> EntryPoint: %s%s" % (COLOR.CYAN, COLOR.NO_COLOR,matchName)
 				self.flowGraph.addNode(var_node)
 			else:
 				self.processEndNone(match.group(2), matchName, matchType, lineno)
 		else : # patterns didnt match, try string assignment
-			new_match = self.PHP_STRING.search(match.group(2))
-			if new_match:
-				self.processString(match.group(2), lineno)
+			string_match = self.PHP_STRING.search(match.group(2))
+			if string_match:
+				strNode = self.processString(match.group(2), lineno)
+				if StringNode:
+					self.flowGraph.addNode(var_node, strNode)
+			else: # string didnt match, try variable to variable assignment
+				var_match = self.PHP_VARIABLE.search(match.group(2))
+				node_var = self.findVarNodes(var_match.group(0))
+				if node_var != []:
+					print "%s\t  -> VarToVar: %s%s" % (COLOR.CYAN, COLOR.NO_COLOR,match.group(2))
+					self.flowGraph.addNode(var_node, node_var[0]) #node_var is list of found nodes (it can only be 1 because there is only one var)
 		# TODO add any other option here?
 
 	def processEndNone(self, match, matchName, matchType, lineno):
@@ -173,25 +189,35 @@ class PHPParser:
 			return
 		args = self.PHP_VARIABLE.findall(func_match.group(1)) # get all variables in the arguments
 		parent_nodes = self.findVarNodes(*args)
+		print "%s\t  -> Args: %s%s" % (COLOR.CYAN, COLOR.NO_COLOR,", ".join(args))
 
 		if parent_nodes != [] and matchType == Pattern.SANITIZATION_FUNCTION:
 			self.flowGraph.addNode(EndNode(matchName, lineno, poisoned=False), *parent_nodes)
 		elif parent_nodes != [] and matchType == Pattern.SENSITIVE_SINK:
 			self.flowGraph.addNode(EndNode(matchName, lineno, poisoned=True), *parent_nodes)
 
+
+# TODO FIXME this is likely useless, maybe we should just link a variable
+# found in a string to the variable the string was assigned to
 	def processString(self, match, lineno):
+		'''Processes String nodes, if it has variables in it adds itself to the graph with the parents being the
+			variables used and returns the node created, otherwise it wont do and return nothing
+		'''
 		# XXX Output
 		print "%s\tString: %s%s" % (COLOR.CYAN, COLOR.NO_COLOR,match)
 		args = self.PHP_VARIABLE.findall(match) # get all variables in the arguments
+		print "%s\t  -> UsedVars: %s%s" % (COLOR.CYAN, COLOR.NO_COLOR,", ".join(args))
 		parent_nodes = self.findVarNodes(*args)
 		if parent_nodes != []:
-			self.flowGraph.addNode(StringNode(match, lineno), *parent_nodes)
+			strNode = StringNode(match, lineno)
+			self.flowGraph.addNode(strNode, *parent_nodes)
+			return strNode
 
 # -------- OTHER METHODS --------
 
 	def findVarNodes(self, *names):
-		'''Finds an already defined varNode by its name'''
-		return self.flowGraph.findVarNodes(names)
+		'''Finds already defined varNodes by their names'''
+		return self.flowGraph.findVarNodes(*names)
 
 	def anotateLine(self, lineno, anotation):
 		'''Inserts an anotation on a certain snippet line'''
@@ -247,15 +273,25 @@ class VariableFlowGraph:
 	def __init__(self):
 		self.top_list = []
 
+# -------- OUTPUT METHODS --------
+
 	def __repr__(self):
 		out = ""
-		self._internal__repr__(self.top_list, out, 0)
+		out += self._internal__repr__(self.top_list, 0, [])
 		return out
 
-	def _internal__repr__(self, nodes, out, traceCount):
+	def _internal__repr__(self, nodes, traceCount, span):
+		tempOut = ""
+		if len(nodes)!=1: span.append(traceCount)
 		for i, node in enumerate(nodes):
-			out += '\n'+'|\t'*traceCount+('\'-' if len(nodes)==i-1 else '|-') + node.name
-			self._internal__repr__(node.prev, out, traceCount+1)
+			if len(nodes) == i+1 and traceCount in span: span.remove(traceCount)
+			tempOut += "\n%s%s%s%s" % (''.join(map(lambda x: u'\u2502     ' if x in span else u'      ', range(traceCount))),
+									u'\u2514\u2500\u2500 ' if len(nodes)==i+1 else u'\u251c\u2500\u2500 ',
+									node.name,
+									self._internal__repr__(node.prev, traceCount+1, span) if node.prev != [] else "")
+		return tempOut
+
+# -------- NODES METHODS --------
 
 	def addNode(self, node, *parentNodes):
 		'''Adds node to the graph, its impossible to add a non VarNode without a parentNode'''
@@ -267,10 +303,15 @@ class VariableFlowGraph:
 					print "This shouldnt happen"
 					return # FIXME MAYBE?
 				if not self.tryDelete(pNode):
-					continue # if parent node is a Sanitization function (EndNode not poisoned) it cant be removed nor followed by more nodes
+				 # if parent node is a Sanitization function (EndNode not poisoned) it cant
+				 # be removed nor followed by more nodes
+					continue
 				pNode.next.append(node) # all the parent Nodes will point to the new node as the next
-				node.prev.apend(pNode)
-			if node.prev != []: # if there are previous nodes (it wasnt added after a Sanitization function) add node to flow list
+				node.prev.append(pNode)
+
+			# if there are previous nodes (it wasnt added after a Sanitization
+			# function) add node to flow list
+			if node.prev != []:
 				self.top_list.append(node)
 
 				if isinstance(node, EndNode) and node.poisoned:
@@ -288,7 +329,7 @@ class VariableFlowGraph:
 
 	def propagatePoison(self, node):
 		for n in node.prev:
-			if isinstance(VarNode):
+			if isinstance(node, VarNode):
 				n.poisoned = True
 			self.propagatePoison(n)
 
@@ -336,6 +377,8 @@ class EndNode(Node):
 	def __init__(self, name, lineno, poisoned):
 		super(EndNode, self).__init__(name, lineno)
 		self.poisoned = poisoned
+
+# -------- PRETTY THINGS :) --------
 
 class COLOR:
 	RED = "\033[31m"
