@@ -103,7 +103,8 @@ class PHPParser:
 		line = ""
 		for lineno, templine in enumerate(fp):
 			# concatenate and strip unwanted chars
-			line = line.join(" "+templine).strip(' \t\r\n')
+			line = (line + " " + templine).strip(' \t\r\n')
+			print "Unprocessed %s" % line
 			if line[-1] != ';': # multiline cases
 				continue
 			else: line = line[:-1]
@@ -194,7 +195,7 @@ class PHPParser:
 
 	def anotateLine(self, lineno, anotation):
 		'''Inserts an anotation on a certain snippet line'''
-		self.loaded_snippet[lineno].join(" "+anotation)
+		self.loaded_snippet[lineno] += " " + anotation
 
 # ----------------------------------------
 
@@ -253,7 +254,7 @@ class VariableFlowGraph:
 
 	def _internal__repr__(self, nodes, out, traceCount):
 		for i, node in enumerate(nodes):
-			out.join('\n'+'|\t'*traceCount+('\'-' if len(nodes)==i-1 else '|-')+node.name)
+			out += '\n'+'|\t'*traceCount+('\'-' if len(nodes)==i-1 else '|-') + node.name
 			self._internal__repr__(node.prev, out, traceCount+1)
 
 	def addNode(self, node, *parentNodes):
