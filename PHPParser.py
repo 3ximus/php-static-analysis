@@ -197,7 +197,7 @@ class PHPParser:
 					self.flowGraph.addNode(var_node, strNode)
 			else:  # string didnt match, try variable to variable assignment
 				var_match = self.PHP_VARIABLE.search(match.group(2))
-				node_var = self.findVarNodes(var_match.group(0))
+				node_var = self.findNodesByValue(var_match.group(0))
 				if node_var != []:
 					if VERBOSE: print "\t  -> %sVarToVar%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,match.group(2))
 					# NOTE node_var is list of found nodes (it can only be 1 because there is
@@ -220,8 +220,8 @@ class PHPParser:
 			print "Failed to match a function call on end node. Meaning an unexpected sanitization or sensitive pattern was given."
 			return
 		args = self.PHP_VARIABLE.findall(func_match.group(1)) # get all variables in the arguments
-		parent_nodes = self.findVarNodes(*args)
-
+		# TODO FIXME it may not only be a PHP_VARIABLE, SEE #8
+		parent_nodes = self.findNodesByValue(*args)
 		if parent_nodes != [] and matchType == Pattern.SANITIZATION_FUNCTION:
 			if VERBOSE: print "%s\tEndNode: %s%s" % (COLOR.GREEN, COLOR.NO_COLOR,matchName)
 			self.flowGraph.addNode(EndNode(matchName, lineno, poisoned=False), *parent_nodes)
@@ -237,7 +237,7 @@ class PHPParser:
 		if VERBOSE: print "\t%sString%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,match)
 		args = self.PHP_VARIABLE.findall(match) # get all variables in the arguments
 		if VERBOSE: print "\t  -> %sUsedVars%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,", ".join(args))
-		parent_nodes = self.findVarNodes(*args)
+		parent_nodes = self.findNodesByValue(*args)
 		if parent_nodes != []:
 			strNode = StringNode(match, lineno)
 			self.flowGraph.addNode(strNode, *parent_nodes)
@@ -245,9 +245,9 @@ class PHPParser:
 
 # -------- OTHER METHODS --------
 
-	def findVarNodes(self, *names):
+	def findNodesByValue(self, *names):
 		'''Finds already defined varNodes by their names'''
-		return self.flowGraph.findVarNodes(*names)
+		return self.flowGraph.findNodesByValue(*names)
 
 	def annotateLine(self, lineno, anotation, markInlineType=False):
 		'''Inserts an anotation on a certain snippet line, markInlineType is a boolean used to do inline annotations'''
@@ -267,7 +267,7 @@ class PHPParser:
 	def getProcessedFile(self, inLineAnnotations=False):
 		'''Returns processed file with annotations'''
 		if not self.processed_file:
-			for node in self.flowGraph.walkTopDown(self.flowGraph.top_nodes):
+			for node in self.flowGraph.walkTopDown(self.flowGraph.end_nodes):
 				if isinstance(node, VarNode) and node.entryPoint:
 					self.annotateLine(node.lineno, COLOR.YELLOW+"<- Entry Point"+COLOR.NO_COLOR, inLineAnnotations)
 				elif isinstance(node, EndNode) and node.poisoned:
@@ -316,7 +316,7 @@ class VariableFlowGraph:
                            /       \             END_NODE
                       END_NODE   END_NODE
 
-		The list self.top_nodes will always be the top nodes in the tree in this case in the end
+		The list self.end_nodes will always be the top nodes in the tree in this case in the end
 			would contain all the end nodes
 
 		A variable is only added to the node if its assigned from an entry point.
@@ -325,7 +325,7 @@ class VariableFlowGraph:
 			to them (NOTE: even if there are huge chains it wont matter since the bug was already found)
 	'''
 	def __init__(self):
-		self.top_nodes = [] # list of all the top nodes
+		self.end_nodes = [] # list of all the top nodes
 		self.entry_nodes = [] # list of all the entry nodes
 		self.node_references= {} # dictionary of node references, key is node.name
 
@@ -334,7 +334,7 @@ class VariableFlowGraph:
 	def __repr__(self):
 		out = "Legend: %sVariable from Entry Points %sPoisoned Variable%s\n\t%sSanitization Functions %sSensitive Sinks%s\n" % \
 				(COLOR.YELLOW, COLOR.UNDERLINE_BACK+COLOR.YELLOW, COLOR.NO_COLOR, COLOR.GREEN, COLOR.RED, COLOR.NO_COLOR)
-		out += self._internal__repr__(self.top_nodes, 0, [])
+		out += self._internal__repr__(self.end_nodes, 0, [])
 		return out
 
 	def _internal__repr__(self, nodes, traceCount, span):
@@ -356,48 +356,44 @@ class VariableFlowGraph:
 
 # -------- NODES METHODS --------
 
-	def addNode(self, node, *parentNodes): # FIXME fix this function
+	def addNode(self, node, *parentNodes):
 		'''Adds node to the graph, its impossible to add a non VarNode without a parentNode'''
+		if parentNodes == (None,): parentNodes = [] # normalize
 		if not parentNodes and isinstance(node, EntryNode):
-			self.top_nodes.append(node)  # creates a new branch
 			self.entry_nodes.append(node)  # creates a new branch
 			self.node_references.update({node.nid: node})
-		elif isinstance(node, VarNode):
-			# TODO if VarNode is already in the graph delete it and reassign it
+			return
 
 		for pNode in parentNodes:  # if there arent any parent nodes this cycle wont run
-			if not pNode in self.top_nodes:
-				# FIXME this will prevent nodes that are used twice from being followed by
-				# another node
-				return
-			if not self.tryDelete(pNode):
-				# if parent node is a Sanitization function (EndNode not poisoned) it cant
-				# be removed nor followed by more nodes
-				continue
-			pNode.next.append(node) # all the parent Nodes will point to the new node as the next
+			if not self.hasNode(pNode):
+				print "Shouldn\'t happen."
+				continue # node doesnt exist in the tree
+			if pNode in self.end_nodes:
+				continue # cant add nodes after end_nodes
+			pNode.next.append(node)
 			node.prev.append(pNode)
 
-		# if there are previous nodes (it wasnt added after a Sanitization
-		# function) add node to flow list
 		if node.prev != []:
+			if isinstance(node, VarNode) and self.hasNode(node):
+				self.removeNode(self.node_references[node.nid]) # remove previous in order to add redefenition
 			self.node_references.update({node.nid: node})
-			self.top_nodes.append(node)
+			if isinstance(node, EndNode):
+				self.end_nodes.append(node)
+				if node.poisoned: self.propagatePoison(node)
 
-			if isinstance(node, EndNode) and node.poisoned:
-				self.propagatePoison(node)
+	def hasNode(self, node):
+		return node.nid in self.node_references
 
 	def removeNode(self, node):
-		pass
-
-	def tryDelete(self, node):
-		'''Doesnt delete a node if its an EnlNode,
-			in turn preventing the main algorithm from adding new nodes after this
-		'''
-		if isinstance(node, EndNode):
-			return False
-		else:
-			self.top_nodes.remove(node)
-			return True
+		for parent in node.prev:
+			parent.next.remove(node)
+		for future in node.next:
+			future.prev.remove(node)
+		if node in self.entry_nodes:
+			self.entry_nodes.remove()
+		if node in self.end_nodes:
+			self.end_nodes.remove()
+		del(self.node_references[node.nid])
 
 	def propagatePoison(self, node):
 		'''Receives a node that originates the poison and spreads it contaminating all reachable VarNodes, <<<< this description xD'''
@@ -407,78 +403,68 @@ class VariableFlowGraph:
 			self.propagatePoison(n)
 
 	def walkTopDown(self, nodes):
-		'''Iterate over this method to retrieved all the nodes in the tree one by one
-
-			Should receive self.top_nodes
-		'''
+		'''Iterate over this method to retrieved all the nodes in the tree one by one '''
 		for n in nodes:
 			if n: yield n
 			for x in self.walkTopDown(n.prev):
 				if x: yield x
 
 	def walkBottomUp(self, nodes):
-		'''Iterate over this method to retrieved all the nodes in the tree one by one
-
-			Should receive self.entry_nodes
-		'''
+		'''Iterate over this method to retrieved all the nodes in the tree one by one '''
 		for n in nodes:
 			if n: yield n
-			for x in self.walkBottomUp(n.prev):
+			for x in self.walkBottomUp(n.next):
 				if x: yield x
 
-	def findVarNodes(self, *names):
+	def findNodesByValue(self, *names):
 		'''Finds all nodes with given names
 
 			NOTE that this function allows names not found in the nodes, so it will ignore undeclared variables
 		'''
 		found_nodes = []
-		for node in self.walkTopDown(self.top_nodes):
-			if isinstance(node, VarNode) and node.nid in names:
-				if node not in found_nodes:
-					found_nodes.append(node)
+		for key, node in self.node_references.iteritems():
+			if isinstance(node, VarNode) and key in names:
+				if node not in found_nodes: found_nodes.append(node)
 		return found_nodes
 
 # -------- PARSER NODES --------
 
 class Node(object):
-	def __init__(self, nid, lineno):
+	def __init__(self, nid, value, lineno):
  		# tuple of previous and next nodes
 		self.nid = nid
 		self.lineno = lineno
+		self.value = value
 		self.next = []
 		self.prev = []
 	def __repr__(self):
 		return "[ %s ]" % self.nid
 
 class StringNode(Node):
-	def __init__(self, content, lineno):
-		super(StringNode, self).__init__("str%d" % getNextInt(), lineno)
-		self.content = content
+	def __init__(self, value, lineno):
+		super(StringNode, self).__init__("str%d" % getNextInt(), value, lineno)
 	def __repr__(self):
-		return "[ %s ]%s" % (self.nid, (" - "+self.content if VERBOSE else ""))
+		return "[ %s ]%s" % (self.nid, (" - "+self.value if VERBOSE else ""))
 
 class VarNode(Node):
 	def __init__(self, value, lineno, entryPoint=False):
-		super(VarNode, self).__init__(value, lineno)
+		super(VarNode, self).__init__(value, value, lineno)
 		self.poisoned = False # if its content carries over to a Sensitive Sink
 		self.entryPoint = entryPoint
-		self.value = value
 
 	def setPoisoned(self, val=True):
 		self.poisoned = val
 
 class EndNode(Node):
 	def __init__(self, value, lineno, poisoned):
-		super(EndNode, self).__init__("end%d" % getNextInt(), lineno)
+		super(EndNode, self).__init__("end%d" % getNextInt(), value, lineno)
 		self.poisoned = poisoned
-		self.value = value
 	def __repr__(self):
 		return "[ %s ] - %s" % (self.nid, self.value)
 
 class EntryNode(Node):
 	def __init__(self, value, lineno):
-		super(EntryNode, self).__init__("entry%d" % getNextInt(), lineno)
-		self.value = value
+		super(EntryNode, self).__init__("entry%d" % getNextInt(), value, lineno)
 	def __repr__(self):
 		return "[ %s ]" % self.value
 

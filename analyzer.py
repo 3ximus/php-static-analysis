@@ -10,10 +10,14 @@ PATTERNS_PATH = "patterns.txt"
 
 # Check received arguments
 if __name__ == '__main__':
-	op = optparse.OptionParser("Usage: ./analyzer.py <filePath> [-p <pattern-file> -n <pattern-number>] [-v]")
-	op.add_option('-p', '--pattern-file', default=PATTERNS_PATH, action='store', dest='pattern_file', help='select patterns file to read patterns from, default is \'%default\'')
-	op.add_option('-n', '--pattern-number', default='0', action='store', type='int', dest='pattern_number', help='select pattern to use by number of read patterns, default is %default')
-	op.add_option('-v', '--verbose', action='store_true', dest='verbose', help='show parsing output')
+	op = optparse.OptionParser(
+		"Usage: ./analyzer.py <filePath> [-p <pattern-file> -n <pattern-number>] [-v]")
+	op.add_option('-p', '--pattern-file', default=PATTERNS_PATH, action='store', dest='pattern_file',
+	              help='select patterns file to read patterns from, default is \'%default\'')
+	op.add_option('-n', '--pattern-number', default='0', action='store', type='int', dest='pattern_number',
+	              help='select pattern to use by number of read patterns, default is %default')
+	op.add_option('-v', '--verbose', action='store_true',
+	              dest='verbose', help='show parsing output')
 	(options, args) = op.parse_args()
 
 	if len(args) < 1:
