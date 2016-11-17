@@ -18,6 +18,13 @@ sys.setdefaultencoding('utf-8')
 global VERBOSE
 VERBOSE = False
 
+UNIQ_ID = 0
+def getNextInt():
+	'''Get a new unique int. Not thread safe'''
+	global UNIQ_ID
+	UNIQ_ID += 1
+	return UNIQ_ID
+
 # -------- PATTERNS --------
 
 class Pattern:
@@ -103,6 +110,7 @@ class PHPParser:
 	PHP_VARIABLE = re.compile(r'\$[A-Za-z_][\w_]*')
 	VAR_ASSIGNMENT = re.compile(r'(\$[A-Za-z_][\w_]*)\s*=(?!=)\s*(.*)') # stores the variable in group1 and the right value in group2
 	PHP_FUNC_CALL = re.compile(r'[A-Za-z_][\w_]*\((.*)\)') # arguments will be in group1
+	PHP_COMMAND = re.compile(r'echo\ (.*)') # php comands
 
 	def __init__(self, path, pattern):
 		self.flowGraph = VariableFlowGraph()
@@ -145,10 +153,11 @@ class PHPParser:
 				line = ""
 				continue
 
-			# TODO process single entry points
-			# TODO process single end nodes
+			match = self.PHP_COMMAND.search(line)
+			if match:
+				self.processPattern(match.group(1), lineno)
 
-			# TODO what else can it be
+			# TODO process inlineHTML with PHP tags
 
 			match = self.PHP_VARIABLE.search(line)
 			if match: print "UNHANDLED VAR" + match.group(0)
@@ -163,12 +172,8 @@ class PHPParser:
 		matchName, matchType = self.pattern.applyPattern(line) # apply pattern to the right value
 		if matchName:
 			if matchType == Pattern.ENTRY_POINT:
-				if varNode:
-					self.processEntryPoint(matchName, varNode)
-					return True
-				else:
-					print "Entry Point matched but no variable is produced from it"
-					return False
+				self.processEntryPoint(matchName, lineno, varNode)
+				return True
 			else:
 				self.processEndNone(line, matchName, matchType, lineno)
 				return True
@@ -182,32 +187,37 @@ class PHPParser:
 				A String,
 		'''
 		if VERBOSE: print "%s\tVarAssigned%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,match.group(1))
-		var_node = VarNode(match.group(1), lineno) # matched var on the left value
-		if not self.processPattern(match.group(2), lineno, varNode=var_node): # patterns didnt match, try string assignment
+		var_node = VarNode(match.group(1), lineno)  # matched var on the left value
+		# patterns didnt match, try string assignment
+		if not self.processPattern(match.group(2), lineno, varNode=var_node):
 			string_match = self.PHP_STRING.search(match.group(2))
 			if string_match:
 				strNode = self.processString(match.group(2), lineno)
 				if StringNode:
 					self.flowGraph.addNode(var_node, strNode)
-			else: # string didnt match, try variable to variable assignment
+			else:  # string didnt match, try variable to variable assignment
 				var_match = self.PHP_VARIABLE.search(match.group(2))
 				node_var = self.findVarNodes(var_match.group(0))
 				if node_var != []:
 					if VERBOSE: print "\t  -> %sVarToVar%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,match.group(2))
-					self.flowGraph.addNode(var_node, node_var[0]) #node_var is list of found nodes (it can only be 1 because there is only one var)
-		# TODO add any other option here?
+					# NOTE node_var is list of found nodes (it can only be 1 because there is
+					# only one var)
+					self.flowGraph.addNode(var_node, node_var[0])
 
-	def processEntryPoint(self, name, varNode):
+	def processEntryPoint(self, name, lineno, varNode):
 		'''Receives the var node from the Entry point assignment'''
 		if VERBOSE: print "%s\t  -> EntryPoint: %s%s" % (COLOR.YELLOW, COLOR.NO_COLOR,name)
-		varNode.entryPoint = True
-		self.flowGraph.addNode(varNode)
+		entry_node = EntryNode(name, lineno)
+		self.flowGraph.addNode(entry_node)
+		if varNode:
+			varNode.entryPoint = True
+			self.flowGraph.addNode(varNode, entry_node)
 
 	def processEndNone(self, match, matchName, matchType, lineno):
 		'''Process end nodes, adds itself to the graph'''
 		func_match = self.PHP_FUNC_CALL.search(match) # not really needed but
 		if not func_match:
-			if VERBOSE: print "Failed to match a function call on end node. Meaning an unexpected sanitization or sensitive pattern was given."
+			print "Failed to match a function call on end node. Meaning an unexpected sanitization or sensitive pattern was given."
 			return
 		args = self.PHP_VARIABLE.findall(func_match.group(1)) # get all variables in the arguments
 		parent_nodes = self.findVarNodes(*args)
@@ -257,7 +267,7 @@ class PHPParser:
 	def getProcessedFile(self, inLineAnnotations=False):
 		'''Returns processed file with annotations'''
 		if not self.processed_file:
-			for node in self.flowGraph.walkOverMe(self.flowGraph.top_list):
+			for node in self.flowGraph.walkTopDown(self.flowGraph.top_nodes):
 				if isinstance(node, VarNode) and node.entryPoint:
 					self.annotateLine(node.lineno, COLOR.YELLOW+"<- Entry Point"+COLOR.NO_COLOR, inLineAnnotations)
 				elif isinstance(node, EndNode) and node.poisoned:
@@ -266,7 +276,6 @@ class PHPParser:
 					self.annotateLine(node.lineno, COLOR.GREEN+"<- Sanitization Function"+COLOR.NO_COLOR, inLineAnnotations)
 			self.processed_file = True
 		return "\n".join(self.loaded_file)
-
 
 # ----------------------------------------
 
@@ -307,7 +316,7 @@ class VariableFlowGraph:
                            /       \             END_NODE
                       END_NODE   END_NODE
 
-		The list self.top_list will always be the top nodes in the tree in this case in the end
+		The list self.top_nodes will always be the top nodes in the tree in this case in the end
 			would contain all the end nodes
 
 		A variable is only added to the node if its assigned from an entry point.
@@ -316,14 +325,16 @@ class VariableFlowGraph:
 			to them (NOTE: even if there are huge chains it wont matter since the bug was already found)
 	'''
 	def __init__(self):
-		self.top_list = []
+		self.top_nodes = [] # list of all the top nodes
+		self.entry_nodes = [] # list of all the entry nodes
+		self.node_references= {} # dictionary of node references, key is node.name
 
 # -------- OUTPUT METHODS --------
 
 	def __repr__(self):
 		out = "Legend: %sVariable from Entry Points %sPoisoned Variable%s\n\t%sSanitization Functions %sSensitive Sinks%s\n" % \
 				(COLOR.YELLOW, COLOR.UNDERLINE_BACK+COLOR.YELLOW, COLOR.NO_COLOR, COLOR.GREEN, COLOR.RED, COLOR.NO_COLOR)
-		out += self._internal__repr__(self.top_list, 0, [])
+		out += self._internal__repr__(self.top_nodes, 0, [])
 		return out
 
 	def _internal__repr__(self, nodes, traceCount, span):
@@ -338,37 +349,45 @@ class VariableFlowGraph:
 					COLOR.RED if isinstance(node, EndNode) and node.poisoned else \
 						(COLOR.GREEN if isinstance(node, EndNode) and not node.poisoned else \
 							(COLOR.YELLOW if isinstance(node, VarNode) and node.entryPoint else '')),
-					node.name,
+					node,
 					COLOR.NO_COLOR,
 					self._internal__repr__(node.prev, traceCount+1, span) if node.prev != [] else "")
 		return tempOut
 
 # -------- NODES METHODS --------
 
-	def addNode(self, node, *parentNodes):
+	def addNode(self, node, *parentNodes): # FIXME fix this function
 		'''Adds node to the graph, its impossible to add a non VarNode without a parentNode'''
-		if not parentNodes and isinstance(node, VarNode):
-			self.top_list.append(node)
-		elif parentNodes:
-			for pNode in parentNodes:
-				if not pNode in self.top_list:
-					# FIXME this will prevent nodes that are used twice from being followed by
-					# another node
-					return
-				if not self.tryDelete(pNode):
-				 # if parent node is a Sanitization function (EndNode not poisoned) it cant
-				 # be removed nor followed by more nodes
-					continue
-				pNode.next.append(node) # all the parent Nodes will point to the new node as the next
-				node.prev.append(pNode)
+		if not parentNodes and isinstance(node, EntryNode):
+			self.top_nodes.append(node)  # creates a new branch
+			self.entry_nodes.append(node)  # creates a new branch
+			self.node_references.update({node.nid: node})
+		elif isinstance(node, VarNode):
+			# TODO if VarNode is already in the graph delete it and reassign it
 
-			# if there are previous nodes (it wasnt added after a Sanitization
-			# function) add node to flow list
-			if node.prev != []:
-				self.top_list.append(node)
+		for pNode in parentNodes:  # if there arent any parent nodes this cycle wont run
+			if not pNode in self.top_nodes:
+				# FIXME this will prevent nodes that are used twice from being followed by
+				# another node
+				return
+			if not self.tryDelete(pNode):
+				# if parent node is a Sanitization function (EndNode not poisoned) it cant
+				# be removed nor followed by more nodes
+				continue
+			pNode.next.append(node) # all the parent Nodes will point to the new node as the next
+			node.prev.append(pNode)
 
-				if isinstance(node, EndNode) and node.poisoned:
-					self.propagatePoison(node)
+		# if there are previous nodes (it wasnt added after a Sanitization
+		# function) add node to flow list
+		if node.prev != []:
+			self.node_references.update({node.nid: node})
+			self.top_nodes.append(node)
+
+			if isinstance(node, EndNode) and node.poisoned:
+				self.propagatePoison(node)
+
+	def removeNode(self, node):
+		pass
 
 	def tryDelete(self, node):
 		'''Doesnt delete a node if its an EnlNode,
@@ -377,7 +396,7 @@ class VariableFlowGraph:
 		if isinstance(node, EndNode):
 			return False
 		else:
-			self.top_list.remove(node)
+			self.top_nodes.remove(node)
 			return True
 
 	def propagatePoison(self, node):
@@ -387,11 +406,24 @@ class VariableFlowGraph:
 				n.poisoned = True
 			self.propagatePoison(n)
 
-	def walkOverMe(self, nodes):
-		'''Iterate over this method to retrieved all the nodes in the tree one by one'''
+	def walkTopDown(self, nodes):
+		'''Iterate over this method to retrieved all the nodes in the tree one by one
+
+			Should receive self.top_nodes
+		'''
 		for n in nodes:
 			if n: yield n
-			for x in self.walkOverMe(n.prev):
+			for x in self.walkTopDown(n.prev):
+				if x: yield x
+
+	def walkBottomUp(self, nodes):
+		'''Iterate over this method to retrieved all the nodes in the tree one by one
+
+			Should receive self.entry_nodes
+		'''
+		for n in nodes:
+			if n: yield n
+			for x in self.walkBottomUp(n.prev):
 				if x: yield x
 
 	def findVarNodes(self, *names):
@@ -400,8 +432,8 @@ class VariableFlowGraph:
 			NOTE that this function allows names not found in the nodes, so it will ignore undeclared variables
 		'''
 		found_nodes = []
-		for node in self.walkOverMe(self.top_list):
-			if isinstance(node, VarNode) and node.name in names:
+		for node in self.walkTopDown(self.top_nodes):
+			if isinstance(node, VarNode) and node.nid in names:
 				if node not in found_nodes:
 					found_nodes.append(node)
 		return found_nodes
@@ -409,30 +441,46 @@ class VariableFlowGraph:
 # -------- PARSER NODES --------
 
 class Node(object):
-	def __init__(self, name, lineno):
+	def __init__(self, nid, lineno):
  		# tuple of previous and next nodes
-		self.name = name
+		self.nid = nid
 		self.lineno = lineno
 		self.next = []
 		self.prev = []
+	def __repr__(self):
+		return "[ %s ]" % self.nid
 
 class StringNode(Node):
-	def __init__(self, name, lineno):
-		super(StringNode, self).__init__(name, lineno)
+	def __init__(self, content, lineno):
+		super(StringNode, self).__init__("str%d" % getNextInt(), lineno)
+		self.content = content
+	def __repr__(self):
+		return "[ %s ]%s" % (self.nid, (" - "+self.content if VERBOSE else ""))
 
 class VarNode(Node):
-	def __init__(self, name, lineno, entryPoint=False):
-		super(VarNode, self).__init__(name, lineno)
+	def __init__(self, value, lineno, entryPoint=False):
+		super(VarNode, self).__init__(value, lineno)
 		self.poisoned = False # if its content carries over to a Sensitive Sink
 		self.entryPoint = entryPoint
+		self.value = value
 
-	def setPoisoned(self, value=True):
-		self.poisoned = value
+	def setPoisoned(self, val=True):
+		self.poisoned = val
 
 class EndNode(Node):
-	def __init__(self, name, lineno, poisoned):
-		super(EndNode, self).__init__(name, lineno)
+	def __init__(self, value, lineno, poisoned):
+		super(EndNode, self).__init__("end%d" % getNextInt(), lineno)
 		self.poisoned = poisoned
+		self.value = value
+	def __repr__(self):
+		return "[ %s ] - %s" % (self.nid, self.value)
+
+class EntryNode(Node):
+	def __init__(self, value, lineno):
+		super(EntryNode, self).__init__("entry%d" % getNextInt(), lineno)
+		self.value = value
+	def __repr__(self):
+		return "[ %s ]" % self.value
 
 # -------- PRETTY THINGS :) --------
 

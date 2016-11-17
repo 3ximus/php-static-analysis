@@ -39,5 +39,5 @@ if __name__ == '__main__':
 		print "\nParse Tree:\n"
 		print parser.flowGraph
 
-		print "\nProcessed File:\n"
-		print parser.getProcessedFile(inLineAnnotations=True)
+#		print "\nProcessed File:\n"
+#		print parser.getProcessedFile(inLineAnnotations=True)

@@ -11,7 +11,7 @@ $id=$_POST['id'];
 
 $blabla = "MY SUPER QUERY '$someVar'";
 $an="UPDATE cat SET '$blabla' AND '$idvv'";
-$edit="UPDATE cat SET cat='$cat' WHERE id_cat='$id'";
+$edit="UPDATE cat SET cat='$cat' WHERE id_cat='$id' AND to_screw_this_up_use_SomeVar_here='$someVa'";
 
 $kitty=$_COOKIE['id'];
 
@@ -22,3 +22,5 @@ $hum=mysql_real_escape_string($kitty);
 $ffff = "MY SUPER QUERY '$kitty'";
 
 $zzz=mysql_query($ffff,$hum);
+
+$xxx=mysql_query($ffff,$hum, $id);
