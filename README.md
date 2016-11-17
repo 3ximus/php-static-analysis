@@ -6,6 +6,9 @@ Parse PHP snippets to find possible vulnerabilities
 
 `./analyzer <file.txt>`
 
+
+## Description:
+
 The parser reads a patterns file ([patterns.txt](https://github.com/3ximus/php-static-analysis/blob/master/patterns.txt)) that has the following information:
 
 ```
@@ -52,3 +55,5 @@ This would generate the following trees:
 Variables are adde to the graph if they are assigned from an Entry Point ( defined in the pattern )
 
 End Nodes are either a Sanitization funciton or a Sensitive sink ( defined in the pattern ), if a Sensitive sink exists in the tree the originating variables are marked as poisoned ( they will generate a vulnerability )
+
+## [Known Issues](https://github.com/3ximus/php-static-analysis/issues)
