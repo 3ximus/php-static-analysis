@@ -58,6 +58,9 @@ class Pattern:
 
 	def addEntry(self, mylist, entry):
 		'''Add pattern entry (either a string or a list of strings) to a given type'''
+		if len(entry) == 1 and entry[0] == "":
+			return
+
 		if isinstance(entry, list): mylist.extend(entry)
 		else: mylist.append(entry)
 
@@ -129,7 +132,7 @@ class PHPParser:
 	def parsePHPFile(self, fp):
 		'''Reades file creating nodes and adding them to the flowGraph'''
 		line = ""
-		lineno =- 1
+		lineno = -1
 		for original_lineno, templine in enumerate(fp):
 			# concatenate and strip unwanted chars
 			line = (line + " " + templine).strip(' \t\r\n')

@@ -21,9 +21,9 @@ echo,print
 Command Execution
 $_GET,$_POST,$_COOKIE,$_REQUEST
 
-exec,passthru,system,shell_exec,``,popen,proc_open,pcntl_exec
+exec,passthru,system,shell_exec,popen,proc_open,pcntl_exec
 
 PHP code Execution
 $_GET,$_POST,$_COOKIE,$_REQUEST
 
-eval(),assert(),create_function(),include(),include_once(),require(),require_once()
+eval,assert,create_function,include,include_once,require,require_once
