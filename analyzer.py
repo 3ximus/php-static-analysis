@@ -32,7 +32,7 @@ if __name__ == '__main__':
 			continue
 
 
-		print "\nParsing File: %s" % f
+		print "\nParsing File: %s%s%s" % (PHPParser.COLOR.PURPLE, f, PHPParser.COLOR.NO_COLOR)
 		for i, p in enumerate([None if args.pattern_number != -1 and p != args.pattern_number else p for p in pCollection.patterns]):
 			if not p: continue
 			if args.verbose == 2: print "Using Pattern: %d - %s" % (i, p.vuln_name)
