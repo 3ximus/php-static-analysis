@@ -52,9 +52,9 @@ class Pattern:
 		return "%sPattern:%s \"%s\"\n%sEntryPoints:%s %s\n   \
 				\r%sSanitization functions:%s %s\n%sSensitive sinks:%s %s" % \
 				(COLOR.CYAN, COLOR.NO_COLOR, self.vuln_name,
-				COLOR.CYAN,COLOR.NO_COLOR, self.entry_points,
-				COLOR.CYAN,COLOR.NO_COLOR, self.sanitization_functions,
-				COLOR.CYAN,COLOR.NO_COLOR, self.sensitive_sinks)
+				COLOR.CYAN, COLOR.NO_COLOR, self.entry_points,
+				COLOR.CYAN, COLOR.NO_COLOR, self.sanitization_functions,
+				COLOR.CYAN, COLOR.NO_COLOR, self.sensitive_sinks)
 
 	def addEntry(self, mylist, entry):
 		'''Add pattern entry (either a string or a list of strings) to a given type'''
@@ -128,9 +128,8 @@ class PHPParser:
 
 	def parsePHPFile(self, fp):
 		'''Reades file creating nodes and adding them to the flowGraph'''
-		re.compile
 		line = ""
-		lineno=-1
+		lineno =- 1
 		for original_lineno, templine in enumerate(fp):
 			# concatenate and strip unwanted chars
 			line = (line + " " + templine).strip(' \t\r\n')
@@ -139,9 +138,9 @@ class PHPParser:
 				continue
 			else: line = line[:-1]
 			self.loaded_file.append(line)
-			lineno+=1
+			lineno += 1
 
-			if VERBOSE: print "%sParsing Line: %s%s" % (COLOR.BLUE, COLOR.NO_COLOR,line)
+			if VERBOSE: print "%sParsing Line: %s%s" % (COLOR.BLUE, COLOR.NO_COLOR, line)
 
 			# parse line
 			if self.COMMENT.search(line):
@@ -155,7 +154,8 @@ class PHPParser:
 				continue
 
 			# process only pattern
-			self.processPattern(line, lineno)
+			if self.processPattern(line, lineno):
+				continue
 
 			# TODO process inlineHTML with PHP tags
 
@@ -171,7 +171,6 @@ class PHPParser:
 		'''Process line with class pattern. Returns whether or not it matched sucessfully.
 			The varNode given is only added to the tree if case the right value is an entry point
 		'''
-		print line
 		matchName, matchType = self.pattern.applyPattern(line) # apply pattern to the right value
 		if matchName:
 			if matchType == Pattern.ENTRY_POINT:
@@ -195,7 +194,7 @@ class PHPParser:
 			string_match = self.PHP_STRING.search(match.group(2))
 			if string_match:
 				strNode = self.processString(match.group(2), lineno)
-				if StringNode:
+				if strNode:
 					self.flowGraph.addNode(var_node, strNode)
 			else:  # string didnt match, try variable to variable assignment
 				var_match = self.PHP_VARIABLE.search(match.group(2))
@@ -298,7 +297,7 @@ class PHPParser:
 # -------- PARSER GRAPH --------
 
 class VariableFlowGraph:
-	'''This class contains a variable content propagation graph
+	r'''This class contains a variable content propagation graph
 
 		This class will behave as demonstrated in the following php file example:
 
@@ -358,7 +357,7 @@ class VariableFlowGraph:
 		for i, node in enumerate(nodes):
 			if len(nodes) == i+1 and traceCount in span: span.remove(traceCount)
 			tempOut += "\n%s%s%s%s%s%s%s" %  \
-					(''.join(map(lambda x: u'\u2502     ' if x in span else u'      ', range(traceCount))),
+					(''.join([u'\u2502     ' if x in span else u'      ' for x in range(traceCount)]),
 					u'\u2514\u2500\u2500 ' if len(nodes)==i+1 else u'\u251c\u2500\u2500 ',
 					COLOR.UNDERLINE_BACK if isinstance(node, VarNode) and node.entryPoint and node.poisoned else '',
 					COLOR.RED if isinstance(node, EndNode) and node.poisoned else \
