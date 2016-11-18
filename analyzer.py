@@ -41,6 +41,6 @@ if __name__ == '__main__':
 			if parser.isVulnerable():
 				if args.verbose:
 					print "\nParse Tree:"
-					print parser.flowGraph
+					print parser.flow_graph
 				print "\n ----- > %s is vulnerable to: %s%s%s < -----\n" % (f,PHPParser.COLOR.ITALIC + PHPParser.COLOR.RED, p.vuln_name, PHPParser.COLOR.ITALIC + PHPParser.COLOR.NO_COLOR)
-				print parser.getProcessedFile(inLineAnnotations=True)
+				print parser.get_processed_file(inLineAnnotations=True)
