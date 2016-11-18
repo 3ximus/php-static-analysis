@@ -41,7 +41,7 @@ if __name__ == '__main__':
 		parser = PHPParser.PHPParser(f, pCollection.patterns[options.pattern_number])
 
 		print "\nParse Tree:\n"
-		print parser.flowGraph
+		print parser.flow_graph
 
 		print "\nProcessed File:\n"
-		print parser.get_processed_file(inLineAnnotations=True)
+		print parser.get_processed_file(in_line_annotations=True)

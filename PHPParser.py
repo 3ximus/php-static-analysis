@@ -214,7 +214,7 @@ class PHPParser(object):
 		entry_node = EntryNode(name, lineno)
 		self.flow_graph.add_node(entry_node)
 		if var_node:
-			var_node.entryPoint = True
+			var_node.entry_point = True
 			self.flow_graph.add_node(var_node, entry_node)
 		return entry_node
 
@@ -285,7 +285,7 @@ class PHPParser(object):
 		'''Returns processed file with annotations'''
 		if not self.processed_file:
 			for node in self.flow_graph.walk_top_down(self.flow_graph.end_nodes):
-				if isinstance(node, VarNode) and node.entryPoint:
+				if isinstance(node, VarNode) and node.entry_point:
 					self.annotate_line(node.lineno, COLOR.YELLOW+"<- Entry Point"+COLOR.NO_COLOR, in_line_annotations)
 				elif isinstance(node, EndNode) and node.poisoned:
 					self.annotate_line(node.lineno, COLOR.RED+"<- Sensitive Sink"+COLOR.NO_COLOR, in_line_annotations)
@@ -362,10 +362,10 @@ class VariableFlowGraph(object):
 			temp_out += "\n%s%s%s%s%s%s%s" %  \
 					(''.join([u'\u2502     ' if x in span else u'      ' for x in range(trace_count)]), \
 					u'\u2514\u2500\u2500 ' if len(nodes) == i+1 else u'\u251c\u2500\u2500 ', \
-					COLOR.UNDERLINE_BACK if isinstance(node, VarNode) and node.entryPoint and node.poisoned else '', \
+					COLOR.UNDERLINE_BACK if isinstance(node, VarNode) and node.entry_point and node.poisoned else '', \
 					COLOR.RED if isinstance(node, EndNode) and node.poisoned else \
 						(COLOR.GREEN if isinstance(node, EndNode) and not node.poisoned else \
-							(COLOR.YELLOW if isinstance(node, VarNode) and node.entryPoint else '')), \
+							(COLOR.YELLOW if isinstance(node, VarNode) and node.entry_point else '')), \
 					node, \
 					COLOR.NO_COLOR, \
 					self._internal__repr__(node.prev, trace_count+1, span) if node.prev != [] else "")
