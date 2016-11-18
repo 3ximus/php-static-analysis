@@ -26,9 +26,9 @@ if __name__ == '__main__':
 		PHPParser.VERBOSE = True
 
 	pCollection = PHPParser.PatternCollection(options.pattern_file)
-	print "Loaded patterns:\n"
-	for pattern in pCollection.patterns:
-		print "%s\n" % pattern
+	#print "Loaded patterns:\n"
+	#for pattern in pCollection.patterns:
+	#print "%s\n" % pattern
 
 	# Read slice file
 	files_to_parse = args
@@ -37,7 +37,7 @@ if __name__ == '__main__':
 			print "\nSlice file path given (\"%s\") does not exist.\n" % f
 			continue
 
-		print "\nParsing File: %s\n" % f
+		print "\nParsing File: %s using pattern %d:\n%s\n" % (f, options.pattern_number, pCollection.patterns[options.pattern_number])
 		parser = PHPParser.PHPParser(f, pCollection.patterns[options.pattern_number])
 
 		print "\nParse Tree:\n"

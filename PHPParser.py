@@ -63,13 +63,18 @@ class Pattern:
 
 	def applyPattern(self, string):
 		'''Applies pattern to a string and returns its match name and match type'''
-		for ep in self.entry_points:
-			if ep in string: return ep, self.ENTRY_POINT
+		mName, mType = None, None
 		for ss in self.sensitive_sinks:
-			if ss in string: return ss, self.SENSITIVE_SINK
+			if ss in string:
+				mName, mType = ss, self.SENSITIVE_SINK
+		for ep in self.entry_points:
+			if ep in string:
+				mName, mType = ep, self.ENTRY_POINT
 		for sf in self.sanitization_functions:
-			if sf in string: return sf, self.SANITIZATION_FUNCTION
-		return None, None
+			if sf in string:
+				mName, mType = sf, self.SANITIZATION_FUNCTION
+		print mName, mType
+		return mName, mType
 
 
 class PatternCollection:
@@ -109,8 +114,8 @@ class PHPParser:
 	PHP_STRING = re.compile(r'\".*\"')
 	PHP_VARIABLE = re.compile(r'\$[A-Za-z_][\w_]*')
 	VAR_ASSIGNMENT = re.compile(r'(\$[A-Za-z_][\w_]*)\s*=(?!=)\s*(.*)') # stores the variable in group1 and the right value in group2
-	PHP_FUNC_CALL = re.compile(r'[A-Za-z_][\w_]*\((.*)\)') # arguments will be in group1
-	PHP_COMMAND = re.compile(r'echo\ (.*)') # php comands
+	# this is not just a function call, it can also be a command
+	PHP_FUNC_CALL = re.compile(r'[A-Za-z_][\w_]*\((.*)\)|[A-Za-z_][\w_]*\ (.*)') # arguments will be in group1
 
 	def __init__(self, path, pattern):
 		self.flowGraph = VariableFlowGraph()
@@ -134,6 +139,7 @@ class PHPParser:
 		for original_lineno, templine in enumerate(fp):
 			# concatenate and strip unwanted chars
 			line = (line + " " + templine).strip(' \t\r\n')
+			# TODO lines may have embedded HTML and not use ';' for termination
 			if line == "" or line[-1] != ';': # multiline cases
 				continue
 			else: line = line[:-1]
@@ -153,9 +159,8 @@ class PHPParser:
 				line = ""
 				continue
 
-			match = self.PHP_COMMAND.search(line)
-			if match:
-				self.processPattern(match.group(1), lineno)
+			# process only pattern
+			self.processPattern(line, lineno)
 
 			# TODO process inlineHTML with PHP tags
 
@@ -174,12 +179,10 @@ class PHPParser:
 		matchName, matchType = self.pattern.applyPattern(line) # apply pattern to the right value
 		if matchName:
 			if matchType == Pattern.ENTRY_POINT:
-				self.processEntryPoint(matchName, lineno, varNode)
-				return True
+				return self.processEntryPoint(matchName, lineno, varNode)
 			else:
-				self.processEndNone(line, matchName, matchType, lineno)
-				return True
-		return False
+				return self.processEndNone(line, matchName, matchType, lineno)
+		return None
 
 	def processVarAssignment(self, match, lineno):
 		'''Process assignment of a variable in PHP
@@ -190,8 +193,9 @@ class PHPParser:
 		'''
 		if VERBOSE: print "%s\tVarAssigned%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,match.group(1))
 		var_node = VarNode(match.group(1), lineno)  # matched var on the left value
-		# patterns didnt match, try string assignment
+		# ignore processPattern output because assignment only matter if they are of an entry point
 		if not self.processPattern(match.group(2), lineno, varNode=var_node):
+			# patterns didnt match, try string assignment
 			string_match = self.PHP_STRING.search(match.group(2))
 			if string_match:
 				strNode = self.processString(match.group(2), lineno)
@@ -214,6 +218,7 @@ class PHPParser:
 		if varNode:
 			varNode.entryPoint = True
 			self.flowGraph.addNode(varNode, entry_node)
+			return entry_node
 
 	def processEndNone(self, match, matchName, matchType, lineno):
 		'''Process end nodes, adds itself to the graph'''
@@ -221,16 +226,28 @@ class PHPParser:
 		if not func_match:
 			print "Failed to match a function call on end node. Meaning an unexpected sanitization or sensitive pattern was given."
 			return
-		args = self.PHP_VARIABLE.findall(func_match.group(1)) # get all variables in the arguments
-		# TODO FIXME it may not only be a PHP_VARIABLE, SEE #8
-		parent_nodes = self.findNodesByValue(*args)
+		arg_match = func_match.group(1) if func_match.group(1) else func_match.group(2)
+		# check if args are a pattern
+		pNode = self.processPattern(arg_match, lineno)
+		if pNode:
+			parent_nodes = [pNode,]
+		# check if args are a variable
+		else:
+			args = self.PHP_VARIABLE.findall(arg_match) # get all variables in the arguments
+			parent_nodes = self.findNodesByValue(*args)
+
+		# process to add nodes
+		end_node = None
 		if parent_nodes != [] and matchType == Pattern.SANITIZATION_FUNCTION:
 			if VERBOSE: print "%s\tEndNode: %s%s" % (COLOR.GREEN, COLOR.NO_COLOR,matchName)
-			self.flowGraph.addNode(EndNode(matchName, lineno, poisoned=False), *parent_nodes)
+			end_node = EndNode(matchName, lineno, poisoned=False)
+			self.flowGraph.addNode(end_node, *parent_nodes)
 		elif parent_nodes != [] and matchType == Pattern.SENSITIVE_SINK:
 			if VERBOSE: print "%s\tEndNode: %s%s" % (COLOR.RED, COLOR.NO_COLOR,matchName)
-			self.flowGraph.addNode(EndNode(matchName, lineno, poisoned=True), *parent_nodes)
+			end_node = EndNode(matchName, lineno, poisoned=True)
+			self.flowGraph.addNode(end_node, *parent_nodes)
 		if VERBOSE: print "\t  -> %sArgs%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,", ".join(args))
+		return end_node
 
 	def processString(self, match, lineno):
 		'''Processes String nodes, if it has variables in it adds itself to the graph with the parents being the
