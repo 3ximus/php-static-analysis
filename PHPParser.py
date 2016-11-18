@@ -63,18 +63,13 @@ class Pattern:
 
 	def applyPattern(self, string):
 		'''Applies pattern to a string and returns its match name and match type'''
-		mName, mType = None, None
 		for ss in self.sensitive_sinks:
-			if ss in string:
-				mName, mType = ss, self.SENSITIVE_SINK
+			if ss in string: return ss, self.SENSITIVE_SINK
 		for ep in self.entry_points:
-			if ep in string:
-				mName, mType = ep, self.ENTRY_POINT
+			if ep in string: return ep, self.ENTRY_POINT
 		for sf in self.sanitization_functions:
-			if sf in string:
-				mName, mType = sf, self.SANITIZATION_FUNCTION
-		print mName, mType
-		return mName, mType
+			if sf in string: return sf, self.SANITIZATION_FUNCTION
+		return None, None
 
 
 class PatternCollection:
@@ -165,7 +160,7 @@ class PHPParser:
 			# TODO process inlineHTML with PHP tags
 
 			match = self.PHP_VARIABLE.search(line)
-			if match: print "UNHANDLED VAR" + match.group(0)
+			if match: print "UNHANDLED VAR -> " + match.group(0)
 
 			# ignore everything else
 
@@ -176,6 +171,7 @@ class PHPParser:
 		'''Process line with class pattern. Returns whether or not it matched sucessfully.
 			The varNode given is only added to the tree if case the right value is an entry point
 		'''
+		print line
 		matchName, matchType = self.pattern.applyPattern(line) # apply pattern to the right value
 		if matchName:
 			if matchType == Pattern.ENTRY_POINT:
@@ -218,7 +214,7 @@ class PHPParser:
 		if varNode:
 			varNode.entryPoint = True
 			self.flowGraph.addNode(varNode, entry_node)
-			return entry_node
+		return entry_node
 
 	def processEndNone(self, match, matchName, matchType, lineno):
 		'''Process end nodes, adds itself to the graph'''
@@ -246,7 +242,7 @@ class PHPParser:
 			if VERBOSE: print "%s\tEndNode: %s%s" % (COLOR.RED, COLOR.NO_COLOR,matchName)
 			end_node = EndNode(matchName, lineno, poisoned=True)
 			self.flowGraph.addNode(end_node, *parent_nodes)
-		if VERBOSE: print "\t  -> %sArgs%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,", ".join(args))
+		if VERBOSE : print "\t  -> %sArgs%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,arg_match)
 		return end_node
 
 	def processString(self, match, lineno):
