@@ -4,7 +4,10 @@ Parse PHP snippets to find possible vulnerabilities
 
 ## Usage:
 
-`analyzer.py <filePath> [-p <pattern-file> -n <pattern-number>] [-v]`
+```
+analyzer.py [-h] [-p PATTERN_FILE] [-n PATTERN_NUMBER] [-v [VERBOSE]]
+                   file [file ...]
+```
 
 
 ## Description:
@@ -34,6 +37,7 @@ $v1=mysql_query($varw,$var0);
 $v2=mysql_query($varx,$var0);
 $test=mysql_real_escaped_string($vary);
 $out=mysql_query($test,$var0);
+
 ```
 
 This would generate the following trees:
@@ -52,8 +56,53 @@ This would generate the following trees:
          END_NODE   END_NODE
 ```
 
+In the program output the tree would be as follows:
+
+```php
+├── [ end7 ] - mysql_query
+│     └── [ $vary ]
+│           └── [ str5 ] - "SELECT var1,nis,sem...
+│                 └── [ $var1 ]
+│                       └── [ $_GET ]
+├── [ end8 ] - mysql_query
+│     └── [ $varw ]
+│           └── [ str6 ] - "SELECT var1,nis,sem...
+│                 ├── [ $var2 ]
+│                 │     └── [ $_POST ]
+│                 └── [ $var3 ]
+│                       └── [ $_COOKIE ]
+├── [ end9 ] - mysql_query
+│     └── [ $varx ]
+│           └── [ $_POST ]
+└── [ end10 ] - mysql_query
+      └── [ $test ]
+            └── [ $vary ]
+                  └── [ str5 ] - "SELECT var1,nis,sem...
+                        └── [ $var1 ]
+                              └── [ $_GET ]
+
+ ----- > examples/readme_example.txt is vulnerable to: SQL injection - MySQL < -----
+
+$var1=$_GET['idn'] <- Entry Point <- Entry Point
+$var2=$_POST['sis'] <- Entry Point
+$var3=$_COOKIE['ll'] <- Entry Point
+$varx=$_POST['ss'] <- Entry Point
+$vary="SELECT var1,nis,semester FROM nilai WHERE nis='$var1'GROUP BY semester"
+$varw="SELECT var1,nis,semester FROM nilai WHERE nis='$var2' AND ll='$var3' GROUP BY semester"
+$varz=mysql_query($vary,$var0) <- Sensitive Sink
+$v1=mysql_query($varw,$var0) <- Sensitive Sink
+$v2=mysql_query($varx,$var0) <- Sensitive Sink
+$test=mysql_real_escaped_string($vary)
+$out=mysql_query($test,$var0) <- Sensitive Sink
+
+```
+
+*Generated with `./analyzer.py examples/readme_example.txt -v`*
+
+
+
 Variables are adde to the graph if they are assigned from an Entry Point ( defined in the pattern )
 
 End Nodes are either a Sanitization funciton or a Sensitive sink ( defined in the pattern ), if a Sensitive sink exists in the tree the originating variables are marked as poisoned ( they will generate a vulnerability )
 
-## [Known Issues](https://github.com/3ximus/php-static-analysis/issues)
+## [Known Issues](https://github.com/3ximus/php-static-analysis/issues?q=is%3Aissue+is%3Aopen+label%3Abug)

@@ -15,9 +15,6 @@ import re
 reload(sys)
 sys.setdefaultencoding('utf-8')
 
-global VERBOSE
-VERBOSE = False
-
 UNIQ_ID = 0
 def getNextInt():
 	'''Get a new unique int. Not thread safe'''
@@ -106,66 +103,60 @@ class PHPParser:
 
 	# PHP stuff
 	COMMENT = re.compile(r'/\*(.|\n)*?\*/ | //([^?%\n]|[?%](?!>))*\n? | \#([^?%\n]|[?%](?!>))*\n?') # untested
-	PHP_OPENTAG = re.compile(r'<[?%]((php[ \t\r\n]?)|=)?')
-	PHP_CLOSETAG = re.compile(r'[?%]>\r?\n?') # untested
-	OPEN_HTML_TAG = re.compile(r'<(?![?%])')
+	PHP_EMBEDDED_HTML = re.compile(r'<.*<[?%]php[ \s]?(.*)\?>.*>') # html code will be on group1
 	PHP_STRING = re.compile(r'\".*\"')
 	PHP_VARIABLE = re.compile(r'\$[A-Za-z_][\w_]*')
 	VAR_ASSIGNMENT = re.compile(r'(\$[A-Za-z_][\w_]*)\s*=(?!=)\s*(.*)') # stores the variable in group1 and the right value in group2
 	# this is not just a function call, it can also be a command
 	PHP_FUNC_CALL = re.compile(r'[A-Za-z_][\w_]*\((.*)\)|[A-Za-z_][\w_]*\ (.*)') # arguments will be in group1
 
-	def __init__(self, path, pattern):
+	def __init__(self, path, pattern, verbose_level=0):
 		self.flowGraph = VariableFlowGraph()
 		self.loaded_file = [] # contains the full snippet
 		self.pattern = pattern # instance of Pattern
 		self.processed_file = False
-
+		self.isVulnerableSnippet = False
+		self.verbose = verbose_level
+		if not self.pattern or not isinstance(self.pattern, Pattern):
+			print "Invalid pattern given"
+			sys.exit(-1)
 		if not os.path.exists(path):
 			print "Unexistent php file \"%s\"" % path
 			sys.exit(-1)
 		with open(path, 'r') as fp:
-			self.parsePHPFile(fp) # builds node graph
+			self.normalizePHPFile(fp)
+		self.parsePHPFile() # builds node graph
+		self.setVulnerableStatus()
 
 # -------- FILE PARSE METHOD --------
 
-	def parsePHPFile(self, fp):
+	def parsePHPFile(self):
 		'''Reades file creating nodes and adding them to the flowGraph'''
-		line = ""
-		lineno = -1
-		for original_lineno, templine in enumerate(fp):
-			# concatenate and strip unwanted chars
-			line = (line + " " + templine).strip(' \t\r\n')
-			# TODO lines may have embedded HTML and not use ';' for termination
-			if line == "" or line[-1] != ';': # multiline cases
-				continue
-			else: line = line[:-1]
-			self.loaded_file.append(line)
-			lineno += 1
+		for lineno, line in enumerate(self.loaded_file):
+			line = line.strip(' \t\r\n')
+			if line == "": continue
 
-			if VERBOSE: print "%sParsing Line: %s%s" % (COLOR.BLUE, COLOR.NO_COLOR, line)
+			if self.verbose == 2: print "%sParsing Line: %s%s" % (COLOR.BLUE, COLOR.NO_COLOR, line)
 
 			# parse line
 			if self.COMMENT.search(line):
-				line = ""
 				continue # ignore comments
 
 			match = self.VAR_ASSIGNMENT.search(line)
 			if match:
 				self.processVarAssignment(match, lineno)
-				line = ""
 				continue
 
 			# process only pattern
 			if self.processPattern(line, lineno):
 				continue
 
-			# TODO process inlineHTML with PHP tags
-
-			match = self.PHP_VARIABLE.search(line)
-			if match: print "UNHANDLED VAR -> " + match.group(0)
-
 			# ignore everything else
+
+	def normalizePHPFile(self, fp):
+		file_content = fp.read()
+		file_content = re.sub(self.PHP_EMBEDDED_HTML, r'\g<1>', file_content)
+		self.loaded_file = [line.strip(' \t\r\n').replace('\n','') for line in file_content.split(';')]
 
 
 # -------- PARSE METHODS --------
@@ -189,7 +180,7 @@ class PHPParser:
 				An EndNode ( sanitization function or sensitive sink),
 				A String,
 		'''
-		if VERBOSE: print "%s\tVarAssigned%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,match.group(1))
+		if self.verbose == 2: print "%s\tVarAssigned%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,match.group(1))
 		var_node = VarNode(match.group(1), lineno)  # matched var on the left value
 		# ignore processPattern output because assignment only matter if they are of an entry point
 		if not self.processPattern(match.group(2), lineno, varNode=var_node):
@@ -201,16 +192,16 @@ class PHPParser:
 					self.flowGraph.addNode(var_node, strNode)
 			else:  # string didnt match, try variable to variable assignment
 				var_match = self.PHP_VARIABLE.search(match.group(2))
-				node_var = self.findNodesByValue(var_match.group(0))
+				node_var = self.findNodesByValue(var_match.group(0)) if var_match else []
 				if node_var != []:
-					if VERBOSE: print "\t  -> %sVarToVar%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,match.group(2))
+					if self.verbose == 2: print "\t  -> %sVarToVar%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,match.group(2))
 					# NOTE node_var is list of found nodes (it can only be 1 because there is
 					# only one var)
 					self.flowGraph.addNode(var_node, node_var[0])
 
 	def processEntryPoint(self, name, lineno, varNode):
 		'''Receives the var node from the Entry point assignment'''
-		if VERBOSE: print "%s\t  -> EntryPoint: %s%s" % (COLOR.YELLOW, COLOR.NO_COLOR,name)
+		if self.verbose == 2: print "%s\t  -> EntryPoint: %s%s" % (COLOR.YELLOW, COLOR.NO_COLOR,name)
 		entry_node = EntryNode(name, lineno)
 		self.flowGraph.addNode(entry_node)
 		if varNode:
@@ -237,23 +228,23 @@ class PHPParser:
 		# process to add nodes
 		end_node = None
 		if parent_nodes != [] and matchType == Pattern.SANITIZATION_FUNCTION:
-			if VERBOSE: print "%s\tEndNode: %s%s" % (COLOR.GREEN, COLOR.NO_COLOR,matchName)
+			if self.verbose == 2: print "%s\tEndNode: %s%s" % (COLOR.GREEN, COLOR.NO_COLOR,matchName)
 			end_node = EndNode(matchName, lineno, poisoned=False)
 			self.flowGraph.addNode(end_node, *parent_nodes)
 		elif parent_nodes != [] and matchType == Pattern.SENSITIVE_SINK:
-			if VERBOSE: print "%s\tEndNode: %s%s" % (COLOR.RED, COLOR.NO_COLOR,matchName)
+			if self.verbose == 2: print "%s\tEndNode: %s%s" % (COLOR.RED, COLOR.NO_COLOR,matchName)
 			end_node = EndNode(matchName, lineno, poisoned=True)
 			self.flowGraph.addNode(end_node, *parent_nodes)
-		if VERBOSE : print "\t  -> %sArgs%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,arg_match)
+		if self.verbose == 2: print "\t  -> %sArgs%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,arg_match)
 		return end_node
 
 	def processString(self, match, lineno):
 		'''Processes String nodes, if it has variables in it adds itself to the graph with the parents being the
 			variables used and returns the node created, otherwise it wont do and return nothing
 		'''
-		if VERBOSE: print "\t%sString%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,match)
+		if self.verbose == 2: print "\t%sString%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,match)
 		args = self.PHP_VARIABLE.findall(match) # get all variables in the arguments
-		if VERBOSE: print "\t  -> %sUsedVars%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,", ".join(args))
+		if self.verbose == 2: print "\t  -> %sUsedVars%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,", ".join(args))
 		parent_nodes = self.findNodesByValue(*args)
 		if parent_nodes != []:
 			strNode = StringNode(match, lineno)
@@ -265,6 +256,13 @@ class PHPParser:
 	def findNodesByValue(self, *names):
 		'''Finds already defined varNodes by their names'''
 		return self.flowGraph.findNodesByValue(*names)
+
+	def setVulnerableStatus(self):
+		if len(self.flowGraph.end_nodes) > 0:
+			self.isVulnerableSnippet=True
+
+	def isVulnerable(self):
+		return self.isVulnerableSnippet
 
 	def annotateLine(self, lineno, anotation, markInlineType=False):
 		'''Inserts an anotation on a certain snippet line, markInlineType is a boolean used to do inline annotations'''
@@ -461,7 +459,7 @@ class StringNode(Node):
 	def __init__(self, value, lineno):
 		super(StringNode, self).__init__("str%d" % getNextInt(), value, lineno)
 	def __repr__(self):
-		return "[ %s ]%s" % (self.nid, (" - "+self.value if VERBOSE else ""))
+		return "[ %s ] - %s..." % (self.nid, self.value[:20])
 
 class VarNode(Node):
 	def __init__(self, value, lineno, entryPoint=False):
