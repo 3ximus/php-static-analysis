@@ -102,7 +102,8 @@ class PHPParser:
 	'''
 
 	# PHP stuff
-	COMMENT = re.compile(r'/\*(.|\n)*?\*/ | //([^?%\n]|[?%](?!>))*\n? | \#([^?%\n]|[?%](?!>))*\n?') # untested
+	SINGLE_LINE_COMMENT = re.compile(r'\/\/.*\n|#.*\n')
+	MULTI_LINE_COMMENT = re.compile(r'/\*((?:.|\n)*?)\*/')
 	PHP_EMBEDDED_HTML = re.compile(r'<.*<[?%]php[ \s]?(.*)\?>.*>') # html code will be on group1
 	PHP_STRING = re.compile(r'\".*\"')
 	PHP_VARIABLE = re.compile(r'\$[A-Za-z_][\w_]*')
@@ -138,10 +139,6 @@ class PHPParser:
 
 			if self.verbose == 2: print "%sParsing Line: %s%s" % (COLOR.BLUE, COLOR.NO_COLOR, line)
 
-			# parse line
-			if self.COMMENT.search(line):
-				continue # ignore comments
-
 			match = self.VAR_ASSIGNMENT.search(line)
 			if match:
 				self.process_var_assignment(match, lineno)
@@ -156,7 +153,9 @@ class PHPParser:
 	def normalize_php_file(self, fp):
 		file_content = fp.read()
 		file_content = re.sub(self.PHP_EMBEDDED_HTML, r'\g<1>', file_content)
-		self.loaded_file = [line.strip(' \t\r\n').replace('\n','') for line in file_content.split(';')]
+		file_content = re.sub(self.SINGLE_LINE_COMMENT, '', file_content)
+		file_content = re.sub(self.MULTI_LINE_COMMENT, '', file_content)
+		self.loaded_file = [line.strip(' \t\r\n').replace('\n','') for line in re.split(r'[;\{\}]', file_content)]
 
 
 # -------- PARSE METHODS --------
