@@ -1,0 +1,16 @@
+$idkelas=$_GET['idk'];
+$show_kelas="SELECT * FROM kelas WHERE id_kelas='$idkelas'";
+
+$idkelas=$_POST['idk'];
+$show_kelas=mysql_real_escape_string($idkelas);
+$san="SELECT * FROM kelas WHERE id_kelas='$show_kelas'";
+
+$hasil_kelas=mysql_query($san,$koneksi);
+
+$jj=$_GET['idk'];
+
+$jj="fixed value";
+$show_kelas="SELECT * FROM kelas WHERE id_kelas='$jj'";
+
+
+mysql_query($show_kelas,$koneksi);

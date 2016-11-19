@@ -10,8 +10,10 @@ This module has :
 		when added to the graph, the graph itself only maintains a list of the border nodes
 '''
 
-import sys, os
+import os
 import re
+import sys
+
 reload(sys)
 sys.setdefaultencoding('utf-8')
 
@@ -161,23 +163,22 @@ class PHPParser:
 # -------- PARSE METHODS --------
 
 	def process_pattern(self, line, lineno, var_node=None):
-		'''Process line with class pattern. Returns whether or not it matched sucessfully.
-			The var_node given is only added to the tree if case the right value is an entry point
-		'''
-		matchName, match_type = self.pattern.apply_pattern(line) # apply pattern to the right value
-		if matchName:
+		'''Process line with class pattern. Returns whether or not it matched sucessfully.'''
+		match_name, match_type = self.pattern.apply_pattern(line) # apply pattern to the right value
+		if match_name:
 			if match_type == Pattern.ENTRY_POINT:
-				return self.process_entry_point(matchName, lineno, var_node)
+				return self.process_entry_point(match_name, lineno, var_node)
 			else:
-				return self.process_end_node(line, matchName, match_type, lineno)
+				return self.process_end_node(line, match_name, match_type, lineno, var_node=var_node)
 		return None
 
 	def process_var_assignment(self, match, lineno):
 		'''Process assignment of a variable in PHP
 			The right value of an assignment can be:
-				An Entry Point (adds it to the graph),
-				An EndNode ( sanitization function or sensitive sink),
-				A String,
+				- An Entry Point (adds it to the graph),
+				- An EndNode ( sanitization function or sensitive sink),
+				- A String,
+				- Another Variable
 		'''
 		if self.verbose == 2: print "%s\tVarAssigned%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,match.group(1))
 		var_node = VarNode(match.group(1), lineno)  # matched var on the left value
@@ -208,7 +209,7 @@ class PHPParser:
 			self.flow_graph.add_node(var_node, entry_node)
 		return entry_node
 
-	def process_end_node(self, match, matchName, match_type, lineno):
+	def process_end_node(self, match, match_name, match_type, lineno, var_node=None):
 		'''Process end nodes, adds itself to the graph'''
 		func_match = self.PHP_FUNC_CALL.search(match) # not really needed but
 		if not func_match:
@@ -227,12 +228,15 @@ class PHPParser:
 		# process to add nodes
 		end_node = None
 		if parent_nodes != [] and match_type == Pattern.SANITIZATION_FUNCTION:
-			if self.verbose == 2: print "%s\tEndNode: %s%s" % (COLOR.GREEN, COLOR.NO_COLOR,matchName)
-			end_node = EndNode(matchName, lineno, poisoned=False)
+			if self.verbose == 2: print "%s\tEndNode: %s%s" % (COLOR.GREEN, COLOR.NO_COLOR,match_name)
+			end_node = EndNode(match_name, lineno, poisoned=False)
 			self.flow_graph.add_node(end_node, *parent_nodes)
+			if var_node:
+				# since we are sanitizing to this variable we must remove it from the tree
+				self.flow_graph.remove_node(var_node)
 		elif parent_nodes != [] and match_type == Pattern.SENSITIVE_SINK:
-			if self.verbose == 2: print "%s\tEndNode: %s%s" % (COLOR.RED, COLOR.NO_COLOR,matchName)
-			end_node = EndNode(matchName, lineno, poisoned=True)
+			if self.verbose == 2: print "%s\tEndNode: %s%s" % (COLOR.RED, COLOR.NO_COLOR,match_name)
+			end_node = EndNode(match_name, lineno, poisoned=True)
 			self.flow_graph.add_node(end_node, *parent_nodes)
 		if self.verbose == 2: print "\t  -> %sArgs%s: %s" % (COLOR.ITALIC, COLOR.NO_COLOR,arg_match)
 		return end_node
@@ -266,16 +270,16 @@ class PHPParser:
 	def annotate_line(self, lineno, anotation, markInlineType=False):
 		'''Inserts an anotation on a certain snippet line, markInlineType is a boolean used to do inline annotations'''
 		if markInlineType:
-			matchName, match_type = self.pattern.apply_pattern(self.loaded_file[lineno])
+			match_name, match_type = self.pattern.apply_pattern(self.loaded_file[lineno])
 			if match_type == Pattern.ENTRY_POINT:
 				self.loaded_file[lineno] = self.loaded_file[lineno].replace(
-					matchName, COLOR.YELLOW + matchName + COLOR.NO_COLOR)
+					match_name, COLOR.YELLOW + match_name + COLOR.NO_COLOR)
 			if match_type == Pattern.SANITIZATION_FUNCTION:
 				self.loaded_file[lineno] = self.loaded_file[lineno].replace(
-					matchName, COLOR.GREEN + matchName + COLOR.NO_COLOR)
+					match_name, COLOR.GREEN + match_name + COLOR.NO_COLOR)
 			if match_type == Pattern.SENSITIVE_SINK:
 				self.loaded_file[lineno] = self.loaded_file[lineno].replace(
-					matchName, COLOR.RED + matchName + COLOR.NO_COLOR)
+					match_name, COLOR.RED + match_name + COLOR.NO_COLOR)
 		self.loaded_file[lineno] += " " + anotation
 
 	def get_processed_file(self, inLineAnnotations=False):
@@ -283,11 +287,11 @@ class PHPParser:
 		if not self.processed_file:
 			for node in self.flow_graph.walk_top_down(self.flow_graph.end_nodes):
 				if isinstance(node, VarNode) and node.entryPoint:
-					self.annotate_line(node.lineno, COLOR.YELLOW+"<- Entry Point"+COLOR.NO_COLOR, inLineAnnotations)
+					self.annotate_line(node.lineno, COLOR.YELLOW+"<- Entry Point (%s)"%node.nid+COLOR.NO_COLOR, inLineAnnotations)
 				elif isinstance(node, EndNode) and node.poisoned:
-					self.annotate_line(node.lineno, COLOR.RED+"<- Sensitive Sink"+COLOR.NO_COLOR, inLineAnnotations)
+					self.annotate_line(node.lineno, COLOR.RED+"<- Sensitive Sins (%s)"%node.nid+COLOR.NO_COLOR, inLineAnnotations)
 				elif isinstance(node, EndNode) and not node.poisoned:
-					self.annotate_line(node.lineno, COLOR.GREEN+"<- Sanitization Function"+COLOR.NO_COLOR, inLineAnnotations)
+					self.annotate_line(node.lineno, COLOR.GREEN+"<- Sanitization Function (%s)"%node.nid+COLOR.NO_COLOR, inLineAnnotations)
 			self.processed_file = True
 		return "\n".join(self.loaded_file)
 
@@ -380,7 +384,7 @@ class VariableFlowGraph:
 
 		for pNode in parentNodes:  # if there arent any parent nodes this cycle wont run
 			if not self.has_node(pNode):
-				print "Shouldn\'t happen."
+				print "Ading node with unexistent parent. Shouldn\'t happen."
 				continue # node doesnt exist in the tree
 			if pNode in self.end_nodes:
 				continue # cant add nodes after end_nodes
@@ -389,7 +393,7 @@ class VariableFlowGraph:
 
 		if node.prev != []:
 			if isinstance(node, VarNode) and self.has_node(node):
-				self.remoce_node(self.node_references[node.nid]) # remove previous in order to add redefenition
+				self.remove_node(self.node_references[node.nid]) # remove previous in order to add redefenition
 			self.node_references.update({node.nid: node})
 			if isinstance(node, EndNode):
 				self.end_nodes.append(node)
@@ -398,22 +402,24 @@ class VariableFlowGraph:
 	def has_node(self, node):
 		return node.nid in self.node_references
 
-	def remoce_node(self, node):
+	def remove_node(self, node):
+		if not self.has_node(node): return # nothing to do here
+		# TODO remove the rest of the branch upstream since this node may have a connection to a end_node
 		for parent in node.prev:
 			parent.next.remove(node)
 		for future in node.next:
 			future.prev.remove(node)
 		if node in self.entry_nodes:
-			self.entry_nodes.remove()
+			self.entry_nodes.remove(node)
 		if node in self.end_nodes:
-			self.end_nodes.remove()
+			self.end_nodes.remove(node)
 		del(self.node_references[node.nid])
 
 	def propagate_poison(self, node):
 		'''Receives a node that originates the poison and spreads it contaminating all reachable VarNodes, <<<< this description xD'''
 		for n in node.prev:
 			if isinstance(n, VarNode):
-				n.poisoned = True
+				n.set_poisoned(True)
 			self.propagate_poison(n)
 
 	def walk_top_down(self, nodes):
@@ -463,10 +469,10 @@ class StringNode(Node):
 class VarNode(Node):
 	def __init__(self, value, lineno, entryPoint=False):
 		super(VarNode, self).__init__(value, value, lineno)
-		self.poisoned = False # if its content carries over to a Sensitive Sink
+		self.poisoned = None # if its content carries over to a Sensitive Sink
 		self.entryPoint = entryPoint
 
-	def set_poisoned(self, val=True):
+	def set_poisoned(self, val):
 		self.poisoned = val
 
 class EndNode(Node):

@@ -32,15 +32,21 @@ if __name__ == '__main__':
 			continue
 
 
+		vuln_file = False
 		print "\nParsing File: %s%s%s" % (PHPParser.COLOR.PURPLE, f, PHPParser.COLOR.NO_COLOR)
-		for i, p in enumerate([None if args.pattern_number != -1 and p != args.pattern_number else p for p in pCollection.patterns]):
+		for i, p in enumerate([None if args.pattern_number != -1 and i != args.pattern_number else p for i, p in enumerate(pCollection.patterns)]):
 			if not p: continue
 			if args.verbose == 2: print "Using Pattern: %d - %s" % (i, p.vuln_name)
 			parser = PHPParser.PHPParser(f, p, verbose_level=args.verbose)
 
 			if parser.isVulnerable():
+				vuln_file = True
 				if args.verbose:
 					print "\nParse Tree:"
 					print parser.flow_graph
 				print "\n ----- > %s is vulnerable to: %s%s%s < -----\n" % (f,PHPParser.COLOR.ITALIC + PHPParser.COLOR.RED, p.vuln_name, PHPParser.COLOR.ITALIC + PHPParser.COLOR.NO_COLOR)
 				print parser.get_processed_file(inLineAnnotations=True)
+
+		if not vuln_file:
+			print "\n ----- > %s is not vulnerable < -----\n" % f
+
