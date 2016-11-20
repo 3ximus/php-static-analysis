@@ -115,7 +115,7 @@ class PHPParser:
 
 	def __init__(self, path, pattern, verbose_level=0):
 		self.flow_graph = VariableFlowGraph()
-		self.loaded_file = [] # contains the full snippet
+		self.normalized_file = [] # contains the full snippet
 		self.pattern = pattern # instance of Pattern
 		self.processed_file = False
 		self.is_vulnerable_snippet = False
@@ -135,7 +135,7 @@ class PHPParser:
 
 	def parse_php_file(self):
 		'''Reades file creating nodes and adding them to the flowGraph'''
-		for lineno, line in enumerate(self.loaded_file):
+		for lineno, line in enumerate(self.normalized_file):
 			line = line.strip(' \t\r\n')
 			if line == "": continue
 
@@ -157,7 +157,7 @@ class PHPParser:
 		file_content = re.sub(self.PHP_EMBEDDED_HTML, r'\g<1>', file_content)
 		file_content = re.sub(self.SINGLE_LINE_COMMENT, '', file_content)
 		file_content = re.sub(self.MULTI_LINE_COMMENT, '', file_content)
-		self.loaded_file = [line.strip(' \t\r\n').replace('\n','') for line in re.split(r'[;\{\}]', file_content)]
+		self.normalized_file = [line.strip(' \t\r\n').replace('\n','') for line in re.split(r'[;\{\}]', file_content)]
 
 
 # -------- PARSE METHODS --------
@@ -269,33 +269,28 @@ class PHPParser:
 	def isVulnerable(self):
 		return self.is_vulnerable_snippet
 
-	def annotate_line(self, lineno, anotation, markInlineType=False):
-		'''Inserts an anotation on a certain snippet line, markInlineType is a boolean used to do inline annotations'''
-		if markInlineType:
-			match_name, match_type = self.pattern.apply_pattern(self.loaded_file[lineno])
-			if match_type == Pattern.ENTRY_POINT:
-				self.loaded_file[lineno] = self.loaded_file[lineno].replace(
-					match_name, COLOR.YELLOW + match_name + COLOR.NO_COLOR)
-			if match_type == Pattern.SANITIZATION_FUNCTION:
-				self.loaded_file[lineno] = self.loaded_file[lineno].replace(
-					match_name, COLOR.GREEN + match_name + COLOR.NO_COLOR)
-			if match_type == Pattern.SENSITIVE_SINK:
-				self.loaded_file[lineno] = self.loaded_file[lineno].replace(
-					match_name, COLOR.RED + match_name + COLOR.NO_COLOR)
-		self.loaded_file[lineno] += " " + anotation
+	def annotate_line(self, lineno, anotation, markInline=None, color=''):
+		'''Inserts an anotation on a certain snippet line, markInline is a string to mark with color if given'''
+		if markInline:
+			self.normalized_file[lineno] = self.normalized_file[lineno].replace(
+				markInline, color + markInline + COLOR.NO_COLOR)
+		self.normalized_file[lineno] += " " + anotation
 
 	def get_processed_file(self, inLineAnnotations=False):
 		'''Returns processed file with annotations'''
 		if not self.processed_file:
 			for node in self.flow_graph.walk_top_down(self.flow_graph.end_nodes):
-				if isinstance(node, VarNode) and node.entryPoint:
-					self.annotate_line(node.lineno, COLOR.YELLOW+"<- Entry Point (%s)"%node.nid+COLOR.NO_COLOR, inLineAnnotations)
+				if isinstance(node, EntryNode):
+					self.annotate_line(node.lineno, COLOR.YELLOW + "<- Entry Point (%s)" % node.nid +
+					                   COLOR.NO_COLOR, node.value if inLineAnnotations else None, color=COLOR.YELLOW)
 				elif isinstance(node, EndNode) and node.poisoned:
-					self.annotate_line(node.lineno, COLOR.RED+"<- Sensitive Sink (%s)"%node.nid+COLOR.NO_COLOR, inLineAnnotations)
+					self.annotate_line(node.lineno, COLOR.RED + "<- Sensitive Sink (%s)" %
+					                   node.nid + COLOR.NO_COLOR, node.value if inLineAnnotations else None, color=COLOR.RED)
 				elif isinstance(node, EndNode) and not node.poisoned:
-					self.annotate_line(node.lineno, COLOR.GREEN+"<- Sanitization Function (%s)"%node.nid+COLOR.NO_COLOR, inLineAnnotations)
+					self.annotate_line(node.lineno, COLOR.GREEN + "<- Sanitization Function (%s)" %
+					                   node.nid + COLOR.NO_COLOR, node.value if inLineAnnotations else None, color=COLOR.GREEN)
 			self.processed_file = True
-		return "\n".join(self.loaded_file)
+		return "\n".join(self.normalized_file)
 
 # ----------------------------------------
 
@@ -351,28 +346,27 @@ class VariableFlowGraph:
 
 # -------- OUTPUT METHODS --------
 
-	def __repr__(self):
-		out = "Legend: %sVariable from Entry Points %sPoisoned Variable%s\n\t%sSanitization Functions %sSensitive Sinks%s\n" % \
-				(COLOR.YELLOW, COLOR.UNDERLINE_BACK+COLOR.YELLOW, COLOR.NO_COLOR, COLOR.GREEN, COLOR.RED, COLOR.NO_COLOR)
-		out += self._internal__repr__(self.end_nodes, 0, [])
-		return out
-
-	def _internal__repr__(self, nodes, traceCount, span):
-		tempOut = ""
+	def __repr__(self, nodes=None, traceCount=0, span=None):
+		'''Recurse __repr__ call, prints the tree structure, check it out, its pretty'''
+		out = ''
+		if nodes == None: # default values on first call
+			nodes = self.end_nodes
+			span = [] # cant set default value since list is persistent across calls
+			out = "Legend: %s Entry Points %sSanitization Functions %sSensitive Sinks%s\n" % \
+					(COLOR.YELLOW, COLOR.GREEN, COLOR.RED, COLOR.NO_COLOR)
 		if len(nodes)!=1: span.append(traceCount)
 		for i, node in enumerate(nodes):
 			if len(nodes) == i+1 and traceCount in span: span.remove(traceCount)
-			tempOut += "\n%s%s%s%s%s%s%s" %  \
-					(''.join([u'\u2502     ' if x in span else u'      ' for x in range(traceCount)]),
-					u'\u2514\u2500\u2500 ' if len(nodes)==i+1 else u'\u251c\u2500\u2500 ',
-					COLOR.UNDERLINE_BACK if isinstance(node, VarNode) and node.entryPoint and node.poisoned else '',
+			out += "\n%s%s%s%s%s%s" %  \
+					(''.join([u'\u2502     ' if x in span else u'      ' for x in range(traceCount)]), # sets padding with tree branches
+					u'\u2514\u2500\u2500 ' if len(nodes)==i+1 else u'\u251c\u2500\u2500 ', # set branch division simbol
 					COLOR.RED if isinstance(node, EndNode) and node.poisoned else \
 						(COLOR.GREEN if isinstance(node, EndNode) and not node.poisoned else \
-							(COLOR.YELLOW if isinstance(node, VarNode) and node.entryPoint else '')),
+							(COLOR.YELLOW if isinstance(node, EntryNode) else '')),
 					node,
 					COLOR.NO_COLOR,
-					self._internal__repr__(node.prev, traceCount+1, span) if node.prev != [] else "")
-		return tempOut
+					self.__repr__(node.prev, traceCount+1, span) if node.prev != [] else "")
+		return out
 
 # -------- NODES METHODS --------
 
