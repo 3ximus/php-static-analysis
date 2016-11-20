@@ -406,11 +406,15 @@ class VariableFlowGraph:
 
 	def remove_node(self, node):
 		if not self.has_node(node): return # nothing to do here
-		# TODO remove the rest of the branch upstream since this node may have a connection to a end_node
+		for future in node.next:
+			if len(future.prev) == 1:
+				# assume that prev list on next node will always contain this node,
+				# therefore if len == 1 it can be removed since we are the node holding it
+				self.remove_node(future)
+			else:  # otherwise only remove this node from its prev list
+				future.prev.remove(node)
 		for parent in node.prev:
 			parent.next.remove(node)
-		for future in node.next:
-			future.prev.remove(node)
 		if node in self.entry_nodes:
 			self.entry_nodes.remove(node)
 		if node in self.end_nodes:
