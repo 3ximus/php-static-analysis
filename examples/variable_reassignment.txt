@@ -9,7 +9,7 @@ $hasil_kelas=mysql_query($san,$koneksi);
 
 $jj=$_GET['idk'];
 
-$jj="fixed value";
+$jj="fixed value"; // this also sanitizes...
 $show_kelas="SELECT * FROM kelas WHERE id_kelas='$jj'";
 
 

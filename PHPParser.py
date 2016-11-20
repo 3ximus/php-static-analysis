@@ -188,8 +188,8 @@ class PHPParser:
 			string_match = self.PHP_STRING.search(match.group(2))
 			if string_match:
 				strNode = self.process_string(match.group(2), lineno)
-				if strNode:
-					self.flow_graph.add_node(var_node, strNode)
+				if strNode: self.flow_graph.add_node(var_node, strNode) # add assigned var with vars inside string as parent nodes
+				else: self.flow_graph.remove_node(var_node) # remove assigned variable from graph since its content is not problematic anymore
 			else:  # string didnt match, try variable to variable assignment
 				var_match = self.PHP_VARIABLE.search(match.group(2))
 				node_var = self.find_nodes_by_value(var_match.group(0)) if var_match else []
