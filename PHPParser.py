@@ -307,34 +307,34 @@ class VariableFlowGraph:
 
 		This class will behave as demonstrated in the following php file example:
 
-			$id_nilai=$_GET['idn'];
-			$strl=$_POST['sis'];
-			$cook=$_COOKIE['ll'];
+			$var1=$_GET['idn'];
+			$var2=$_POST['sis'];
+			$var3=$_COOKIE['ll'];
 			$varx=$_POST['ss'];
 
-			$q_nilai="SELECT id_nilai,nis,semester FROM nilai WHERE nis='$id_nilai'GROUP BY semester";
-			$xcont="SELECT id_nilai,nis,semester FROM nilai WHERE nis='$strl' AND ll='$cook' GROUP BY semester";
+			$vary="SELECT var1,nis,semester FROM nilai WHERE nis='$var1'GROUP BY semester";
+			$varw="SELECT var1,nis,semester FROM nilai WHERE nis='$var2' AND ll='$var3' GROUP BY semester";
 
-			$hasil=mysql_query($q_nilai,$koneksi);
-			$v1=mysql_query($xcont,$koneksi);
-			$v2=mysql_query($varx,$koneksi);
-			$test=mysql_real_escaped_string($q_nilai);
-			$out=mysql_query($test,$koneksi);
+			$varz=mysql_query($vary,$var0);
+			$v1=mysql_query($varw,$var0);
+			$v2=mysql_query($varx,$var0);
+			$test=mysql_real_escape_string($varx);
+			$out=mysql_query($test,$var0);
 
 		This would generate the following trees:
 
-                           $id_nilai         $strl      $cook     $varx
+                           $var1             $var2     $var3      $varx
                               |                 \       /           |
                               |                  \     /            |
                               |                   \   /             |
                              str1                 str2           END_NODE
                               |                     |
                               |                     |
-                           $q_nilai              $xcont
-                             /   \                  |
-                            /     \                 |
-                           /       \             END_NODE
-                      END_NODE   END_NODE
+                            $vary                $varw
+                            /   \                   |
+                           /     \                  |
+                          /       \              END_NODE
+                     END_NODE   END_NODE
 
 		The list self.end_nodes will always be the top nodes in the tree in this case in the end
 			would contain all the end nodes

@@ -9,5 +9,5 @@ $varw="SELECT var1,nis,semester FROM nilai WHERE nis='$var2' AND ll='$var3' GROU
 $varz=mysql_query($vary,$var0);
 $v1=mysql_query($varw,$var0);
 $v2=mysql_query($varx,$var0);
-$test=mysql_real_escaped_string($vary);
+$test=mysql_real_escape_string($varx);
 $out=mysql_query($test,$var0);

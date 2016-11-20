@@ -12,7 +12,7 @@ analyzer.py [-h] [-p PATTERN_FILE] [-n PATTERN_NUMBER] [-v [VERBOSE]]
 
 ## Description:
 
-The parser reads a patterns file provider or the default ([patterns.txt](https://github.com/3ximus/php-static-analysis/blob/master/patterns.txt)), if available, that has the following information:
+The parser reads a patterns file provider or the default ([patterns.txt](https://github.com/3ximus/php-static-analysis/blob/master/patterns.txt)), if available, that has the following information in the following format:
 
 ```
 Pattern: "SQL injection"
@@ -35,18 +35,18 @@ $varw="SELECT var1,nis,semester FROM nilai WHERE nis='$var2' AND ll='$var3' GROU
 $varz=mysql_query($vary,$var0);
 $v1=mysql_query($varw,$var0);
 $v2=mysql_query($varx,$var0);
-$test=mysql_real_escaped_string($vary);
+$test=mysql_real_escape_string($varx);
 $out=mysql_query($test,$var0);
 
 ```
 
 This would generate the following trees:
 ```
-               $var1           $var2      $var3      $varx
-                 |                 \       /           |
-                 |                  \     /            |
-                 |                   \   /             |
-                str1                 str2           END_NODE
+               $var1           $var2      $var3      $varx       $varx
+                 |                 \       /           |           |
+                 |                  \     /            |           |
+                 |                   \   /             |           |
+                str1                 str2           END_NODE    END_NODE
                  |                     |
                  |                     |
                 $vary                $varw
@@ -74,26 +74,23 @@ In the program output the tree would be as follows:
 ├── [ end9 ] - mysql_query
 │     └── [ $varx ]
 │           └── [ $_POST ]
-└── [ end10 ] - mysql_query
-      └── [ $test ]
-            └── [ $vary ]
-                  └── [ str5 ] - "SELECT var1,nis,sem...
-                        └── [ $var1 ]
-                              └── [ $_GET ]
+└── [ end10 ] - mysql_real_escape_string
+      └── [ $varx ]
+            └── [ $_POST ]
 
  ----- > examples/readme_example.txt is vulnerable to: SQL injection - MySQL < -----
 
-$var1=$_GET['idn'] <- Entry Point <- Entry Point
-$var2=$_POST['sis'] <- Entry Point
-$var3=$_COOKIE['ll'] <- Entry Point
-$varx=$_POST['ss'] <- Entry Point
+$var1=$_GET['idn'] <- Entry Point ($var1)
+$var2=$_POST['sis'] <- Entry Point ($var2)
+$var3=$_COOKIE['ll'] <- Entry Point ($var3)
+$varx=$_POST['ss'] <- Entry Point ($varx) <- Entry Point ($varx)
 $vary="SELECT var1,nis,semester FROM nilai WHERE nis='$var1'GROUP BY semester"
 $varw="SELECT var1,nis,semester FROM nilai WHERE nis='$var2' AND ll='$var3' GROUP BY semester"
-$varz=mysql_query($vary,$var0) <- Sensitive Sink
-$v1=mysql_query($varw,$var0) <- Sensitive Sink
-$v2=mysql_query($varx,$var0) <- Sensitive Sink
-$test=mysql_real_escaped_string($vary)
-$out=mysql_query($test,$var0) <- Sensitive Sink
+$varz=mysql_query($vary,$var0) <- Sensitive Sink (end7)
+$v1=mysql_query($varw,$var0) <- Sensitive Sink (end8)
+$v2=mysql_query($varx,$var0) <- Sensitive Sink (end9)
+$test=mysql_real_escape_string($varx) <- Sanitization Function (end10)
+$out=mysql_query($test,$var0)
 
 ```
 
