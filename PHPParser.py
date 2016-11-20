@@ -261,8 +261,10 @@ class PHPParser:
 		return self.flow_graph.find_nodes_by_value(*names)
 
 	def set_vulnerable_status(self):
-		if len(self.flow_graph.end_nodes) > 0:
-			self.is_vulnerable_snippet=True
+		for end_node in self.flow_graph.end_nodes:
+			if end_node.poisoned:
+				self.is_vulnerable_snippet = True
+				return
 
 	def isVulnerable(self):
 		return self.is_vulnerable_snippet
@@ -289,7 +291,7 @@ class PHPParser:
 				if isinstance(node, VarNode) and node.entryPoint:
 					self.annotate_line(node.lineno, COLOR.YELLOW+"<- Entry Point (%s)"%node.nid+COLOR.NO_COLOR, inLineAnnotations)
 				elif isinstance(node, EndNode) and node.poisoned:
-					self.annotate_line(node.lineno, COLOR.RED+"<- Sensitive Sins (%s)"%node.nid+COLOR.NO_COLOR, inLineAnnotations)
+					self.annotate_line(node.lineno, COLOR.RED+"<- Sensitive Sink (%s)"%node.nid+COLOR.NO_COLOR, inLineAnnotations)
 				elif isinstance(node, EndNode) and not node.poisoned:
 					self.annotate_line(node.lineno, COLOR.GREEN+"<- Sanitization Function (%s)"%node.nid+COLOR.NO_COLOR, inLineAnnotations)
 			self.processed_file = True

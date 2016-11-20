@@ -48,5 +48,5 @@ if __name__ == '__main__':
 				print parser.get_processed_file(inLineAnnotations=True)
 
 		if not vuln_file:
-			print "\n ----- > %s is not vulnerable < -----\n" % f
+			print "\n ----- > %s%s is not vulnerable%s < -----\n" % (PHPParser.COLOR.GREEN, f, PHPParser.COLOR.NO_COLOR)
 
