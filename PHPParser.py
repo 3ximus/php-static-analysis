@@ -163,7 +163,9 @@ class PHPParser:
 # -------- PARSE METHODS --------
 
 	def process_pattern(self, line, lineno, var_node=None):
-		'''Process line with class pattern. Returns whether or not it matched sucessfully.'''
+		'''Process line with class pattern. Returns whether or not it matched sucessfully.
+			var_node can be used to give a node that will have the pattern as a pattern
+		'''
 		match_name, match_type = self.pattern.apply_pattern(line) # apply pattern to the right value
 		if match_name:
 			if match_type == Pattern.ENTRY_POINT:
@@ -188,7 +190,9 @@ class PHPParser:
 			string_match = self.PHP_STRING.search(match.group(2))
 			if string_match:
 				strNode = self.process_string(match.group(2), lineno)
-				if strNode: self.flow_graph.add_node(var_node, strNode) # add assigned var with vars inside string as parent nodes
+				if strNode:
+					self.flow_graph.add_node(var_node, strNode) # add assigned var with vars inside string as parent nodes
+					return var_node
 				else: self.flow_graph.remove_node(var_node) # remove assigned variable from graph since its content is not problematic anymore
 			else:  # string didnt match, try variable to variable assignment
 				var_match = self.PHP_VARIABLE.search(match.group(2))
@@ -198,6 +202,7 @@ class PHPParser:
 					# NOTE node_var is list of found nodes (it can only be 1 because there is
 					# only one var)
 					self.flow_graph.add_node(var_node, node_var[0])
+					return var_node
 
 	def process_entry_point(self, name, lineno, var_node):
 		'''Receives the var node from the Entry point assignment'''

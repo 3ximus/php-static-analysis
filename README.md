@@ -5,7 +5,7 @@ Parse PHP snippets to find possible vulnerabilities
 ## Usage:
 
 ```
-analyzer.py [-h] [-p PATTERN_FILE] [-n PATTERN_NUMBER] [-v [VERBOSE]]
+analyzer.py [-h] [-p PATTERN_FILE] [-n PATTERN_NUMBER] [-v [VERBOSE]] [-l]
                    file [file ...]
 ```
 

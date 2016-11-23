@@ -1,6 +1,6 @@
 #!/usr/bin/python2
 
-import os
+import os, sys
 import argparse
 import PHPParser
 
@@ -11,21 +11,31 @@ PATTERNS_PATH = "patterns.txt"
 # Check received arguments
 if __name__ == '__main__':
 	op = argparse.ArgumentParser(description="PHP static analysis tool")
-	op.add_argument('files', metavar='file', nargs='+', help='PHP files to be parsed')
+	op.add_argument('files', metavar='file', nargs='*', help='PHP files to be parsed')
 	op.add_argument('-p', '--pattern-file', default=PATTERNS_PATH,  dest='pattern_file',
 	                help='select patterns file to read patterns from, default is \'%(default)s\'')
 	op.add_argument('-n', '--pattern-number', default=-1, type=int,
 	                dest='pattern_number', help='select pattern to use by number of read patterns')
 	op.add_argument('-v', '--verbose', nargs='?', default=0, type=int,
 	              dest='verbose', help='show parsing output with given logging level, default is %(default)s')
+	op.add_argument('-l', '--list', action='store_true',
+	              dest='list', help='display list of patterns available')
 	args = op.parse_args()
 
 	pCollection = PHPParser.PatternCollection(args.pattern_file)
+	if (args.list):
+		for i, p in enumerate(pCollection.patterns):
+			print i, p, '\n'
+		sys.exit(0)
 
 	if args.verbose == None: args.verbose = 1 # fix a bug in argparse
 
 	# Read slice file
 	files_to_parse = args.files
+	if files_to_parse == []:
+		print "No files were given"
+		sys.exit(0)
+
 	for f in files_to_parse:
 		if os.path.exists(f) == False:
 			print "\nSlice file path given (\"%s\") does not exist.\n" % f
