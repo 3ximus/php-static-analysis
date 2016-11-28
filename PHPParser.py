@@ -64,14 +64,20 @@ class Pattern:
 		else: mylist.append(entry)
 
 	def apply_pattern(self, string):
-		'''Applies pattern to a string and returns its match name and match type'''
+		'''Applies pattern to a string and returns its match name and match type
+			This function must be iterated and it gives all the sensitive sinks first, then
+			sanitization functions and last the entry points
+		'''
 		for ss in self.sensitive_sinks:
-			if ss in string: return ss, self.SENSITIVE_SINK
-		for ep in self.entry_points:
-			if ep in string: return ep, self.ENTRY_POINT
+			if ss in string:
+				yield ss, self.SENSITIVE_SINK
 		for sf in self.sanitization_functions:
-			if sf in string: return sf, self.SANITIZATION_FUNCTION
-		return None, None
+			if sf in string:
+				yield sf, self.SANITIZATION_FUNCTION
+		for ep in self.entry_points:
+			if ep in string:
+				yield ep, self.ENTRY_POINT
+		return
 
 
 class PatternCollection:
@@ -166,8 +172,7 @@ class PHPParser:
 		'''Process line with class pattern. Returns whether or not it matched sucessfully.
 			var_node can be used to give a node that will have the pattern as a pattern
 		'''
-		match_name, match_type = self.pattern.apply_pattern(line) # apply pattern to the right value
-		if match_name:
+		for match_name, match_type in self.pattern.apply_pattern(line): # apply pattern to the right value
 			if match_type == Pattern.ENTRY_POINT:
 				return self.process_entry_point(match_name, lineno, var_node)
 			else:
