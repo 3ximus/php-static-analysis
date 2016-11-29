@@ -215,7 +215,6 @@ class PHPParser:
 		entry_node = EntryNode(name, lineno)
 		self.flow_graph.add_node(entry_node)
 		if var_node:
-			var_node.entryPoint = True
 			self.flow_graph.add_node(var_node, entry_node)
 		return entry_node
 
@@ -403,7 +402,6 @@ class VariableFlowGraph:
 			self.node_references.update({node.nid: node})
 			if isinstance(node, EndNode):
 				self.end_nodes.append(node)
-				if node.poisoned: self.propagate_poison(node)
 
 	def has_node(self, node):
 		return node.nid in self.node_references
@@ -424,13 +422,6 @@ class VariableFlowGraph:
 		if node in self.end_nodes:
 			self.end_nodes.remove(node)
 		del(self.node_references[node.nid])
-
-	def propagate_poison(self, node):
-		'''Receives a node that originates the poison and spreads it contaminating all reachable VarNodes, <<<< this description xD'''
-		for n in node.prev:
-			if isinstance(n, VarNode):
-				n.set_poisoned(True)
-			self.propagate_poison(n)
 
 	def walk_top_down(self, nodes):
 		'''Iterate over this method to retrieved all the nodes in the tree one by one '''
@@ -477,13 +468,8 @@ class StringNode(Node):
 		return "[ %s ] - %s..." % (self.nid, self.value[:20])
 
 class VarNode(Node):
-	def __init__(self, value, lineno, entryPoint=False):
+	def __init__(self, value, lineno):
 		super(VarNode, self).__init__(value, value, lineno)
-		self.poisoned = None # if its content carries over to a Sensitive Sink
-		self.entryPoint = entryPoint
-
-	def set_poisoned(self, val):
-		self.poisoned = val
 
 class EndNode(Node):
 	def __init__(self, value, lineno, poisoned):
